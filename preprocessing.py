@@ -133,17 +133,19 @@ def read_data(infile):
         return real, imag
 
 
+@cached(version=0)
 def get_data_generator(mode, filetype):
     assert mode in ('sample', 'train')
+    assert filetype in ('a3d', 'aps')
 
     dir = f'train/{filetype}'
     with read_input_dir(dir):
         files = glob.glob('*')
 
     random.seed(0)
-    if mode == 'sample':
-        files = [file for file in files if random.random() < 0.01]
     random.shuffle(files)
+    if mode == 'sample':
+        files = files[:10]
 
     def gen():
         for file in tqdm.tqdm(files):
@@ -152,8 +154,3 @@ def get_data_generator(mode, filetype):
             yield file, data
 
     return gen
-
-
-@cached(version=3)
-def get_a3d_data_generator(mode):
-    return get_data_generator(mode, 'a3d')
