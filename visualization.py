@@ -3,8 +3,9 @@ from caching import read_input_dir, cached
 import numpy as np
 import preprocessing
 import pyevtk
-import tqdm
 import os
+import matplotlib.pyplot
+import matplotlib.animation
 
 
 @cached(preprocessing.get_data_generator, version=2)
@@ -25,5 +26,22 @@ def convert_a3d_to_vtk(mode):
     open('done', 'a').close()
 
 
+
+@cached(preprocessing.get_data_generator, version=0)
+def convert_aps_to_gif(mode):
+    assert mode in ('train', 'sample')
+
+    def animate(i):
+        im = ax.imshow(np.flipud(data[:,:,i].transpose()), cmap = 'viridis')
+        return [im]
+
+    for file, data in preprocessing.get_data_generator(mode, 'aps')():
+        fig = matplotlib.pyplot.figure(figsize = (16,16))
+        ax = fig.add_subplot(111)
+        anim =  matplotlib.animation.FuncAnimation(fig, animate, frames=range(0, data.shape[2]),
+                                                   interval=200, blit=True)
+        anim.save(file.replace('.aps', '.gif'))
+
+
 if __name__ == '__main__':
-    convert_a3d_to_vtk('sample')
+    convert_aps_to_gif('train')
