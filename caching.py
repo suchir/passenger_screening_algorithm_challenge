@@ -24,22 +24,21 @@ def read_input_dir(dir=''):
 
 class CachedFunction(object):
     def __init__(self, fn, version, *deps):
-        self.version = version
-        self.ancestors = set.union({self}, *(x.ancestors for x in deps))
-        self.version = sum(x.version for x in self.ancestors)
-        self.fn_name = fn.__name__
-        self.dirname = f'{self.fn_name}-{self.version}'
-        self.cache = {}
+        deps = sorted(deps, key=lambda x: x.hash)
+        deps_hash = hashlib.sha256(''.join(x.hash for x in deps).encode()).hexdigest()[:16]
+        self.hash = f'{fn.__name__}-{version}-{deps_hash}'
+        self._cache = {}
         self._fn = fn
 
-    def __call__(self, mode):
-        if mode not in self.cache:
-            print(f'running {self.fn_name}-{mode}... ')
-            with change_directory(f'cache\\{self.dirname}-{mode}'):
-                self.cache[mode] = self._fn(mode)
-            print(f'{self.fn_name}-{mode} completed')
+    def __call__(self, *args):
+        if args not in self._cache:
+            strargs = '-'.join(str(arg) for arg in args)
+            print(f'running {self._fn.__name__}{args}... ')
+            with change_directory(f'cache\\{self.hash}-{strargs}'):
+                self._cache[args] = self._fn(*args)
+            print(f'{self._fn.__name__}{args} completed')
 
-        return self.cache[mode]
+        return self._cache[args]
 
 
 def cached(*deps, version=0):
