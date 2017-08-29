@@ -138,7 +138,7 @@ def get_data_generator(mode, filetype):
     assert mode in ('sample', 'train')
     assert filetype in ('a3d', 'aps')
 
-    dir = f'train/{filetype}'
+    dir = 'train/%s' % filetype
     with read_input_dir(dir):
         files = glob.glob('*')
 

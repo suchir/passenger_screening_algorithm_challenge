@@ -27,7 +27,7 @@ def convert_a3d_to_vtk(mode):
 
 
 
-@cached(preprocessing.get_data_generator, version=0)
+@cached(preprocessing.get_data_generator, version=4)
 def convert_aps_to_gif(mode):
     assert mode in ('train', 'sample')
 
