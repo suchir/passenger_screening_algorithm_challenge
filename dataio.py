@@ -133,7 +133,25 @@ def read_data(infile):
         return real, imag
 
 
-@cached(version=0)
+def get_train_labels():
+    with read_input_dir('train'):
+        lines = open('stage1_labels.csv').readlines()[1:]
+
+    ret = {}
+    for line in lines:
+        file, label = line.split(',')
+        file, zone = file.split('_')
+        zone = int(zone.replace('Zone', ''))
+        label = int(label)
+
+        if file not in ret:
+            ret[file] = [0] * 17
+        ret[file][zone-1] = label
+
+    return ret
+
+
+@cached(version=1)
 def get_data_generator(mode, filetype):
     assert mode in ('sample', 'train')
     assert filetype in ('a3d', 'aps')
@@ -146,6 +164,9 @@ def get_data_generator(mode, filetype):
     random.shuffle(files)
     if mode == 'sample':
         files = files[:10]
+    elif mode == 'train':
+        labels = get_train_labels()
+        files = [file for file in files if file.split('.')[0] in labels]
 
     def gen():
         for file in tqdm.tqdm(files):
