@@ -24,9 +24,10 @@ def read_input_dir(dir=''):
 
 class CachedFunction(object):
     def __init__(self, fn, version, *deps):
-        deps = sorted(deps, key=lambda x: x.hash)
-        deps_hash = hashlib.sha256(''.join(x.hash for x in deps).encode()).hexdigest()[:16]
-        self.hash = '%s-%s-%s' % (fn.__name__, version, deps_hash)
+        self.version = version
+        self.ancestors = set.union({self}, *(x.ancestors for x in deps))
+        self.version = sum(x.version for x in self.ancestors)
+        self.dirname = '%s-%s' % (fn.__name__, self.version)
         self._cache = {}
         self._fn = fn
 
@@ -34,7 +35,7 @@ class CachedFunction(object):
         if args not in self._cache:
             strargs = '-'.join(str(arg) for arg in args)
             print('running %s%s... ' % (self._fn.__name__, args))
-            with change_directory('cache\\%s-%s' % (self.hash, strargs)):
+            with change_directory('cache\\%s-%s' % (self.dirname, strargs)):
                 self._cache[args] = self._fn(*args)
             print('%s%s completed' % (self._fn.__name__, args))
 
