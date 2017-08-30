@@ -162,11 +162,11 @@ def get_data_generator(mode, filetype):
 
     random.seed(0)
     random.shuffle(files)
-    if mode == 'sample':
-        files = files[:10]
-    elif mode == 'train':
+    if mode != 'test':
         labels = get_train_labels()
         files = [file for file in files if file.split('.')[0] in labels]
+    if mode == 'sample':
+        files = files[:10]
 
     def gen():
         for file in tqdm.tqdm(files):
