@@ -87,9 +87,11 @@ class BodyPartLabelerGUI(object):
 
         for line in sum(self.line_stack, []):
             self.canvas.delete(line)
+        self.line_stack = []
         if self.last_preview is not None:
             for line in self.last_preview:
                 self.canvas.delete(line)
+        self.last_preview = None
         self.ans = []
         self.file_index += 1
 
