@@ -151,7 +151,7 @@ def get_train_labels():
     return ret
 
 
-@cached(version=1)
+@cached(version=4)
 def get_data_generator(mode, filetype):
     assert mode in ('sample', 'train')
     assert filetype in ('a3d', 'aps')
