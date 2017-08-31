@@ -7,6 +7,7 @@ import skimage.io
 import os
 import glob
 import random
+import time
 
 
 class BodyPartLabelerGUI(object):
@@ -20,6 +21,7 @@ class BodyPartLabelerGUI(object):
         self.ans = []
         self.file_index = 0
         self.labels = labels
+        self.times = []
 
         self.canvas = tk.Canvas(width=self.image_width, height=self.image_height)
         self.canvas.pack()
@@ -37,8 +39,13 @@ class BodyPartLabelerGUI(object):
     def set_label_text(self):
         labels = self.labels[self.files[self.file_index].split('-')[0]]
         labels = [i+1 for i, label in enumerate(labels) if label]
-        self.label_text.set('%4s/%4s | threat zones: %s' % (self.file_index + 1, len(self.files),
-                                                            labels))
+        eta = '?'
+        if len(self.times) >= 2:
+            eta = (len(self.files)-self.file_index) / \
+                  ((len(self.times)-1)/(self.times[-1]-self.times[0]))
+            eta /= 3600
+        self.label_text.set('%s/%s | eta: %s | threat zones: %s' % (self.file_index + 1,
+                                                                    len(self.files), eta, labels))
 
     def draw_image(self):
         file = self.files[self.file_index]
@@ -101,6 +108,9 @@ class BodyPartLabelerGUI(object):
 
         self.draw_image()
         self.set_label_text()
+        self.times.append(time.time())
+        if len(self.times) > 10:
+            self.times.pop(0)
 
     def create_line(self, event):
         if self.done():
@@ -123,16 +133,18 @@ class BodyPartLabelerGUI(object):
 def get_body_part_labels(mode):
     assert mode in ('sample', 'train')
 
-    for file, data in dataio.get_data_generator(mode, 'aps')():
-        for i in range(0, 16, 4):
-            out = file.replace('.aps', '-%s.gif' % i)
-            if os.path.exists(out):
-                continue
-            image = np.rot90(data[:, :, i])
-            image /= np.max(image)
-            if i == 4 or i == 8:
-                image = np.fliplr(image)
-            skimage.io.imsave(out, image)
+    if not os.path.exists('gifs_created'):
+        for file, data in dataio.get_data_generator(mode, 'aps')():
+            for i in range(0, 16, 4):
+                out = file.replace('.aps', '-%s.gif' % i)
+                if os.path.exists(out):
+                    continue
+                image = np.rot90(data[:, :, i])
+                image /= np.max(image)
+                if i == 4 or i == 8:
+                    image = np.fliplr(image)
+                skimage.io.imsave(out, image)
+        open('gifs_created', 'w').close()
 
     files = [file for file in glob.glob('*.gif')
              if not os.path.exists(file.replace('.gif', '.npy'))]
@@ -148,4 +160,4 @@ def get_body_part_labels(mode):
 
 
 if __name__ == '__main__':
-    get_body_part_labels('sample')
+    get_body_part_labels('train')
