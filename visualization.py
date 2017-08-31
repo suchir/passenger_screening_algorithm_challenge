@@ -1,10 +1,10 @@
 from caching import read_input_dir, cached
 
 import numpy as np
+import matplotlib.pyplot as plt
 import dataio
 import pyevtk
 import os
-import matplotlib.pyplot
 import matplotlib.animation
 
 
@@ -36,12 +36,27 @@ def convert_aps_to_gif(mode):
         return [im]
 
     for file, data in dataio.get_data_generator(mode, 'aps')():
-        fig = matplotlib.pyplot.figure(figsize = (16,16))
+        fig = plt.figure(figsize = (16,16))
         ax = fig.add_subplot(111)
         anim =  matplotlib.animation.FuncAnimation(fig, animate, frames=range(0, data.shape[2]),
                                                    interval=200, blit=True)
         anim.save(file.replace('.aps', '.gif'))
 
 
+@cached(dataio.get_data_generator, version=0)
+def plot_a3d_density_distribution(mode):
+    if os.path.exists('densities.npy'):
+        densities = np.load('densities.npy')
+    else:
+        densities = []
+        for file, data in dataio.get_data_generator(mode, 'a3d')():
+            densities.append(np.mean(data))
+        densities = np.array(densities)
+        np.save('densities.npy', densities)
+
+    plt.hist(densities)
+    plt.savefig('densities.png')
+
+
 if __name__ == '__main__':
-    convert_aps_to_gif('train')
+    plot_a3d_density_distribution('train')
