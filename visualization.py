@@ -52,7 +52,3 @@ def plot_a3d_density_distribution(mode):
 
     plt.hist(densities)
     plt.savefig('densities.png')
-
-
-if __name__ == '__main__':
-    plot_a3d_density_distribution('train')

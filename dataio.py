@@ -155,15 +155,17 @@ def get_train_labels():
 def _get_data_generator(filetype, keep):
     assert filetype in ('a3d', 'aps')
 
-    with read_input_dir('data/%s' % filetype):
+    loc = 'data/%s' % filetype
+
+    with read_input_dir(loc):
         files = sorted(glob.glob('*'))
         random.seed(0)
         random.shuffle(files)
-    files = [i, file for file in enumerate(files) if keep(i, file.split('.')[0])]
+    files = [file for i, file in enumerate(files) if keep(i, file.split('.')[0])]
 
     def gen():
         for file in tqdm.tqdm(files):
-            with read_input_dir(dir):
+            with read_input_dir(loc):
                 data = read_data(file)
             yield file, data
 

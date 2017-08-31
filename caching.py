@@ -22,6 +22,9 @@ def read_input_dir(dir=''):
     return change_directory('input\\%s' % dir)
 
 
+cached_functions = {}
+
+
 class CachedFunction(object):
     def __init__(self, fn, version, *deps):
         self.version = version
@@ -30,9 +33,11 @@ class CachedFunction(object):
         self.dirname = '%s-%s' % (fn.__name__, self.version)
         self._cache = {}
         self._fn = fn
+        cached_functions[fn.__name__] = self
 
     def __call__(self, *args):
         if args not in self._cache:
+            assert all(type(arg) is str for arg in args)
             strargs = '-'.join(str(arg) for arg in args)
             print('running %s%s... ' % (self._fn.__name__, args))
             with change_directory('cache\\%s-%s' % (self.dirname, strargs)):

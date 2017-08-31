@@ -155,7 +155,3 @@ def get_body_part_labels(mode):
     root.mainloop()
 
     assert len(glob.glob('*.gif')) == len(glob.glob('*.npy'))
-
-
-if __name__ == '__main__':
-    get_body_part_labels('train')
