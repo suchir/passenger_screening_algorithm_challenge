@@ -129,12 +129,10 @@ class BodyPartLabelerGUI(object):
             self.ans.pop()
 
 
-@cached(dataio.get_data_generator, version=5)
+@cached(dataio.get_all_data_generator, version=5)
 def get_body_part_labels(mode):
-    assert mode in ('sample', 'train')
-
     if not os.path.exists('gifs_created'):
-        for file, data in dataio.get_data_generator(mode, 'aps')():
+        for file, data in dataio.get_all_data_generator(mode, 'aps')():
             for i in range(0, 16, 4):
                 out = file.replace('.aps', '-%s.gif' % i)
                 if os.path.exists(out):

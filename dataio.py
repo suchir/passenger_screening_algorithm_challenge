@@ -133,8 +133,9 @@ def read_data(infile):
         return real, imag
 
 
+@cached(version=0)
 def get_train_labels():
-    with read_input_dir('train'):
+    with read_input_dir('data'):
         lines = open('stage1_labels.csv').readlines()[1:]
 
     ret = {}
@@ -151,22 +152,14 @@ def get_train_labels():
     return ret
 
 
-@cached(version=5)
-def get_data_generator(mode, filetype):
-    assert mode in ('sample', 'train')
+def _get_data_generator(filetype, keep):
     assert filetype in ('a3d', 'aps')
 
-    dir = 'train/%s' % filetype
-    with read_input_dir(dir):
-        files = glob.glob('*')
-
-    random.seed(0)
-    random.shuffle(files)
-    if mode != 'test':
-        labels = get_train_labels()
-        files = [file for file in files if file.split('.')[0] in labels]
-    if mode == 'sample':
-        files = files[:10]
+    with read_input_dir('data/%s' % filetype):
+        files = sorted(glob.glob('*'))
+        random.seed(0)
+        random.shuffle(files)
+    files = [i, file for file in enumerate(files) if keep(i, file.split('.')[0])]
 
     def gen():
         for file in tqdm.tqdm(files):
@@ -175,3 +168,30 @@ def get_data_generator(mode, filetype):
             yield file, data
 
     return gen
+
+
+@cached(version=5)
+def get_all_data_generator(mode, filetype):
+    assert mode in ('sample', 'all')
+
+    labels = get_train_labels()
+    keep = lambda i, x: x in labels and (mode != 'sample' or i < 10)
+    return _get_data_generator(filetype, keep)
+
+
+@cached(version=5)
+def get_train_data_generator(mode, filetype):
+    assert mode == 'train'
+
+    labels = get_train_labels()
+    keep = lambda i, x: x in labels and i < 800
+    return _get_data_generator(filetype, keep)
+
+
+@cached(version=5)
+def get_test_data_generator(mode, filetype):
+    assert mode in ('valid', 'test')
+
+    labels = get_train_labels()
+    keep = lambda i, x: (mode == 'test' and x not in labels) or (mode == 'valid' and i >= 800)
+    return _get_data_generator(filetype, keep)
