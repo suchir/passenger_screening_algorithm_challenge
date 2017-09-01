@@ -144,14 +144,56 @@ def get_body_part_labels(mode):
                 skimage.io.imsave(out, image)
         open('gifs_created', 'w').close()
 
-    files = [file for file in glob.glob('*.gif')
-             if not os.path.exists(file.replace('.gif', '.npy'))]
-    random.seed(0)
-    random.shuffle(files)
-    labels = dataio.get_train_labels()
+    if not os.path.exists('labels_created'):
+        files = [file for file in glob.glob('*.gif')
+                 if not os.path.exists(file.replace('.gif', '.npy'))]
+        random.seed(0)
+        random.shuffle(files)
+        labels = dataio.get_train_labels()
 
-    root = tk.Tk()
-    gui = BodyPartLabelerGUI(root, files, labels)
-    root.mainloop()
+        root = tk.Tk()
+        gui = BodyPartLabelerGUI(root, files, labels)
+        root.mainloop()
 
-    assert len(glob.glob('*.gif')) == len(glob.glob('*.npy'))
+        open('labels_created', 'w').close()
+
+    if not os.path.exists('done'):
+        side_images, side_labels = [], []
+        front_images, front_labels = [], []
+        for image_file in glob.glob('*.gif'):
+            label_file = image_file.replace('.gif', '.npy')
+            if not os.path.exists(label_file):
+                continue
+
+            side_view = int(image_file.split('.')[0].split('-')[-1]) in (4, 12)
+            images = side_images if side_view else front_images
+            labels = side_labels if side_view else front_labels
+
+            image = skimage.io.imread(image_file)
+            images.append(image)
+            H, W = image.shape
+
+            label = np.load(label_file).astype('float32')
+            if len(label) == 11:
+                label[9:] = label[8] + np.abs(label[9:] - label[8])
+            label[:8] /= H
+            label[8:] /= W
+            labels.append(label)
+
+            if len(label) == 12:
+                print(image.shape, label)
+
+        side_images, side_labels = np.stack(side_images), np.stack(side_labels)
+        front_images, front_labels = np.stack(front_images), np.stack(front_labels)
+
+        np.save('side_images', side_images)
+        np.save('side_labels', side_labels)
+        np.save('front_images', front_images)
+        np.save('front_labels', front_labels)
+
+        open('done', 'w').close()
+    else:
+        side_images, side_labels = np.load('side_images.npy'), np.load('side_labels.npy')
+        front_images, front_labels = np.load('front_images.npy'), np.load('front_labels.npy')
+
+    return side_images, side_labels, front_images, front_labels
