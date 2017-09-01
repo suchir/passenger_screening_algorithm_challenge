@@ -133,7 +133,6 @@ def read_data(infile):
         return real, imag
 
 
-@cached(version=0)
 def get_train_labels():
     with read_input_dir('data'):
         lines = open('stage1_labels.csv').readlines()[1:]

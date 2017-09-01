@@ -31,20 +31,17 @@ class CachedFunction(object):
         self.ancestors = set.union({self}, *(x.ancestors for x in deps))
         self.version = sum(x.version for x in self.ancestors)
         self.dirname = '%s-%s' % (fn.__name__, self.version)
-        self._cache = {}
         self._fn = fn
         cached_functions[fn.__name__] = self
 
     def __call__(self, *args):
-        if args not in self._cache:
-            assert all(type(arg) is str for arg in args)
-            strargs = '-'.join(str(arg) for arg in args)
-            print('running %s%s... ' % (self._fn.__name__, args))
-            with change_directory('cache\\%s-%s' % (self.dirname, strargs)):
-                self._cache[args] = self._fn(*args)
-            print('%s%s completed' % (self._fn.__name__, args))
-
-        return self._cache[args]
+        assert all(type(arg) is str for arg in args)
+        strargs = '-'.join(str(arg) for arg in args)
+        print('running %s%s... ' % (self._fn.__name__, args))
+        with change_directory('cache\\%s-%s' % (self.dirname, strargs)):
+            ret = self._fn(*args)
+        print('%s%s completed' % (self._fn.__name__, args))
+        return ret
 
 
 def cached(*deps, version=0):
