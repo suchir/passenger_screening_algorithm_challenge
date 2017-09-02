@@ -4,6 +4,7 @@ import os
 import random
 import glob
 import tqdm
+import pickle
 
 
 def read_header(infile):
@@ -149,6 +150,20 @@ def get_train_labels():
         ret[file][zone-1] = label
 
     return ret
+
+
+@cached(version=1)
+def get_train_headers(filetype):
+    assert filetype in ('a3d', 'aps')
+    if os.path.exists('headers.pickle'):
+        with open('headers.pickle', 'rb') as f:
+            return pickle.load(f)
+    else:
+        with read_input_dir('data/%s' % filetype):
+            headers = {file.split('.')[0]: read_header(file) for file in glob.glob('*')}
+        with open('headers.pickle', 'wb') as f:
+            pickle.dump(headers, f)
+        return headers
 
 
 def _get_data_generator(filetype, keep):
