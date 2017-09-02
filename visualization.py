@@ -3,6 +3,7 @@ from caching import read_input_dir, cached
 import numpy as np
 import matplotlib.pyplot as plt
 import dataio
+import hand_labeling
 import pyevtk
 import os
 import matplotlib.animation
@@ -24,7 +25,6 @@ def convert_a3d_to_vtk(mode):
     open('done', 'a').close()
 
 
-
 @cached(dataio.get_all_data_generator, version=4)
 def convert_aps_to_gif(mode):
     def animate(i):
@@ -39,16 +39,17 @@ def convert_aps_to_gif(mode):
         anim.save(file.replace('.aps', '.gif'))
 
 
-@cached(dataio.get_all_data_generator, version=0)
-def plot_a3d_density_distribution(mode):
-    if os.path.exists('densities.npy'):
-        densities = np.load('densities.npy')
-    else:
-        densities = []
-        for file, data in dataio.get_all_data_generator(mode, 'a3d')():
-            densities.append(np.mean(data))
-        densities = np.array(densities)
-        np.save('densities.npy', densities)
+@cached(dataio.get_train_headers, version=1)
+def plot_a3d_density_distribution():
+    headers = dataio.get_train_headers('a3d')
 
-    plt.hist(densities)
+    plt.hist([x['avg_data_value'][0] for _, x in headers.items()], bins=100)
     plt.savefig('densities.png')
+
+
+@cached(hand_labeling.get_body_part_labels, version=1)
+def plot_zone_boundary_distributions(mode):
+    _, _, _, front_labels = hand_labeling.get_body_part_labels('all')
+    for i in range(front_labels.shape[1]):
+        plt.hist(front_labels[:, i], bins=100, range=(0, 1))
+    plt.savefig('boundaries.png')
