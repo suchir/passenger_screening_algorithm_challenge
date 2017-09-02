@@ -171,13 +171,10 @@ def get_body_part_labels(mode):
 
             image = skimage.io.imread(image_file)
             images.append(image)
-            H, W = image.shape
 
             label = np.load(label_file).astype('float32')
             if len(label) == 11:
                 label[9:] = label[8] + np.abs(label[9:] - label[8])
-            label[:8] /= H
-            label[8:] /= W
             labels.append(label)
 
             if len(label) == 12:
