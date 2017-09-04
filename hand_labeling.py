@@ -177,9 +177,6 @@ def get_body_part_labels(mode):
                 label[9:] = label[8] + np.abs(label[9:] - label[8])
             labels.append(label)
 
-            if len(label) == 12:
-                print(image.shape, label)
-
         side_images, side_labels = np.stack(side_images), np.stack(side_labels)
         front_images, front_labels = np.stack(front_images), np.stack(front_labels)
 
