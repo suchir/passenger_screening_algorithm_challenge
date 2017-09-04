@@ -181,7 +181,7 @@ def _get_data_generator(filetype, keep):
         for file in tqdm.tqdm(files):
             with read_input_dir(loc):
                 data = read_data(file)
-            yield file, data
+            yield file.split('.')[0], data
 
     return gen
 

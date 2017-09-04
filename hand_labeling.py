@@ -134,7 +134,7 @@ def get_body_part_labels(mode):
     if not os.path.exists('gifs_created'):
         for file, data in dataio.get_all_data_generator(mode, 'aps')():
             for i in range(0, 16, 4):
-                out = file.replace('.aps', '-%s.gif' % i)
+                out = '%s-%s.gif' % (file, i)
                 if os.path.exists(out):
                     continue
                 image = np.rot90(data[:, :, i])
