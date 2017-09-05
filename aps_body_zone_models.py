@@ -134,18 +134,3 @@ def get_naive_partitioned_body_part_train_data(mode):
         x, y = np.load('x.npy'), np.load('y.npy')
 
     return x, y
-
-
-def get_data_generator(x, y, batch_size, proportion_true):
-    x = x[:, :, :, np.newaxis]
-    true_indexes = np.where(y == 1)[0]
-    false_indexes = np.where(y == 0)[0]
-
-    while True:
-        num_true = int((random.random() * 2 * proportion_true) * batch_size)
-        true_choice = np.random.choice(true_indexes, num_true)
-        false_choice = np.random.choice(false_indexes, batch_size-num_true)
-
-        yield np.concatenate([x[true_choice], x[false_choice]]), \
-              np.concatenate([y[true_choice], y[false_choice]])
-

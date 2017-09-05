@@ -2,7 +2,7 @@ import caching
 import dataio
 import hand_labeling
 import visualization
-import body_zone_models
+import aps_body_zone_models
 import sys
 
 
