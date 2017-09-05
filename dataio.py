@@ -197,17 +197,20 @@ def get_all_data_generator(mode, filetype):
 
 @cached(version=5)
 def get_train_data_generator(mode, filetype):
-    assert mode == 'train'
+    assert mode in ('train', 'valid', 'sample_train', 'sample_valid')
 
     labels = get_train_labels()
-    keep = lambda i, x: x in labels and i < 800
+    if mode.startswith('sample'):
+        keep = lambda i, x: x in labels and i < 10 and ((i < 8) == (mode == 'sample_train'))
+    else:
+        keep = lambda i, x: x in labels and ((i < 800) == (mode == 'train'))
     return _get_data_generator(filetype, keep)
 
 
 @cached(version=5)
 def get_test_data_generator(mode, filetype):
-    assert mode in ('valid', 'test')
+    assert mode in ('test')
 
     labels = get_train_labels()
-    keep = lambda i, x: (mode == 'test' and x not in labels) or (mode == 'valid' and i >= 800)
+    keep = lambda i, x: x not in labels
     return _get_data_generator(filetype, keep)
