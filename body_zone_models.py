@@ -4,10 +4,13 @@ import numpy as np
 import dataio
 import hand_labeling
 import skimage.io
+import skimage.transform
 import os
 import glob
 import random
 import time
+import keras.preprocessing.image
+
 
 @cached(hand_labeling.get_body_part_labels, version=0)
 def get_naive_body_part_labels(mode):
@@ -58,18 +61,31 @@ def _get_body_part_partition_labels():
     return labels
 
 
-def _hcrop(image):
-    image1d = np.max(image, axis=0)
-    start = np.argmax(image1d > 0.1)
-    end = np.argmax(image1d[::-1] > 0.1) + 1
-    ret = image[:, start:-end]
-    if ret.size == 0:
-        return np.zeros((image.shape[0], 1))
+def _crop_image(img, tol=0.1):
+    img = img / np.max(img)
+    mask = img > tol
+    return img[np.ix_(mask.any(1),mask.any(0))]
+
+
+def _concat_images(images):
+    ih = max(image.shape[0] for image in images)
+    iw = max(image.shape[1] for image in images)
+
+    best_nrows, best_stretch = -1, 1e9
+    for nrows in range(1, len(images) + 1):
+        h, w = ih * nrows, iw * (len(images)+nrows-1) // nrows
+        stretch = max(h / w, w / h)
+        if stretch < best_stretch:
+            best_stretch, best_nrows = stretch, nrows
+
+    best_ncols = (len(images)+best_nrows-1) // best_nrows
+    ret = np.zeros((ih * best_nrows, iw * best_ncols))
+    for i, image in enumerate(images):
+        r, c = i // best_ncols, i % best_ncols
+        h, w = images[i].shape
+        ret[r*ih:r*ih+h, c*iw:c*iw+w] = images[i]
+
     return ret
-
-
-def _vcrop(image):
-    return _hcrop(image.T).T
 
 
 def _get_body_part_partitions(image, rows, cols):
@@ -82,7 +98,7 @@ def _get_body_part_partitions(image, rows, cols):
     side_cols = pad(side_cols, 512)
 
     image = image.copy()
-    image = [np.rot90(image[:, :, i])/np.max(image[:, :, i]) for i in range(0, 16, 4)]
+    image = [np.rot90(image[:, :, i]) for i in range(0, 16, 4)]
     image[1] = np.fliplr(image[1])
     image[2] = np.fliplr(image[2])
 
@@ -93,26 +109,43 @@ def _get_body_part_partitions(image, rows, cols):
             r1, c1 = p1
             r2, c2 = p2
             cols = front_cols if angle in (0, 2) else side_cols
-            images.append(_hcrop(image[angle][rows[r1]:rows[r2+1], cols[c1]:cols[c2+1]]))
-        ret.append(_vcrop(np.concatenate(images, axis=1)))
-
+            images.append(_crop_image(image[angle][rows[r1]:rows[r2+1], cols[c1]:cols[c2+1]]))
+        ret.append(skimage.transform.resize(_concat_images(images), (256, 256)))
     return ret
 
 
-@cached(dataio.get_train_data_generator, get_naive_body_part_labels, version=9)
+@cached(dataio.get_train_data_generator, get_naive_body_part_labels, version=13)
 def get_naive_partitioned_body_part_train_data(mode):
     if not os.path.exists('done'):
-        for i in '01':
-            if not os.path.exists(i):
-                os.mkdir(i)
         labels = dataio.get_train_labels()
         rows, cols = get_naive_body_part_labels('all')
-
+        x, y = [], []
         for file, data in dataio.get_train_data_generator(mode, 'aps')():
             images = _get_body_part_partitions(data, rows, cols)
-            for i, image in enumerate(images):
-                label = labels[file][i]
-                skimage.io.imsave('%s/%s-%s.png' % (label, file, i+1), image)
+            x += images
+            y += labels[file]
+
+        x, y = np.stack(x), np.array(y)
+        np.save('x.npy', x)
+        np.save('y.npy', y)
 
         open('done', 'w').close()
+    else:
+        x, y = np.load('x.npy'), np.load('y.npy')
+
+    return x, y
+
+
+def get_data_generator(x, y, batch_size, proportion_true):
+    x = x[:, :, :, np.newaxis]
+    true_indexes = np.where(y == 1)[0]
+    false_indexes = np.where(y == 0)[0]
+
+    while True:
+        num_true = int((random.random() * 2 * proportion_true) * batch_size)
+        true_choice = np.random.choice(true_indexes, num_true)
+        false_choice = np.random.choice(false_indexes, batch_size-num_true)
+
+        yield np.concatenate([x[true_choice], x[false_choice]]), \
+              np.concatenate([y[true_choice], y[false_choice]])
 
