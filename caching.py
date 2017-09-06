@@ -35,7 +35,6 @@ class CachedFunction(object):
         cached_functions[fn.__name__] = self
 
     def __call__(self, *args):
-        assert all(type(arg) is str for arg in args)
         strargs = '-'.join(str(arg) for arg in args)
         print('running %s%s... ' % (self._fn.__name__, args))
         with change_directory('cache\\%s-%s' % (self.dirname, strargs)):
