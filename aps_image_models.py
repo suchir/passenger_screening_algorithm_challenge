@@ -118,7 +118,7 @@ def train_local_2d_cnn_model(mode):
             x_out, y_out = next(gen.flow(x_in, y_in, batch_size=len(x_in)))
             x_out += np.random.normal(scale=0.05, size=x_out.shape)
             x_out = np.maximum(x_out, 0)
-            yield x_out[:, ::2, ::2, :], y_out
+            yield x_out[:, ::4, ::4, :], y_out
 
     if not os.path.exists('model.h5'):
         train = 'train' if mode == 'train' else 'sample_train'
@@ -138,7 +138,7 @@ def train_local_2d_cnn_model(mode):
         train_gen_aug = augment_data_generator(train_gen)
         valid_gen_aug = augment_data_generator(valid_gen)
 
-        model = _simple_model(3, 4, 1e-3, 128)
+        model = _simple_model(3, 4, 1e-3, 64)
         model.fit_generator(train_gen_aug, steps_per_epoch=steps_per_epoch, epochs=epochs,
                             verbose=True)
 
