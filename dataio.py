@@ -214,3 +214,11 @@ def get_test_data_generator(mode, filetype):
     labels = get_train_labels()
     keep = lambda i, x: x not in labels
     return _get_data_generator(filetype, keep)
+
+
+def write_answer_csv(ans_dict):
+    with open('ans.csv', 'w') as f:
+        f.write('Id,Probability\n')
+        for label, ret in ans_dict.items():
+            for i in range(17):
+                f.write('%s_Zone%s,%s\n' % (label, i+1, ret[i]))
