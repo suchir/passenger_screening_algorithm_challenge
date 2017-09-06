@@ -137,6 +137,37 @@ def get_naive_partitioned_body_part_train_data(mode):
     return x, y
 
 
+@cached(get_naive_partitioned_body_part_train_data, version=0)
+def get_naive_partitioned_symmetric_body_part_train_data(mode):
+    # this function is broken
+    if not os.path.exists('done'):
+        x_in, y_in = get_naive_partitioned_body_part_train_data(mode)
+
+        swap_idx = [2, 3, 0, 1, -4, 6, 5, 9, -8, 7, 11, 10, 13, 12, 15, 14, -16]
+        def get_symmetric_image(i, j):
+            j = swap_idx[j]
+            ret = x_in[i+abs(j)]
+            if j < 0:
+                ret = np.fliplr(ret)
+            return ret
+
+        x, y = [], []
+        for i in range(0, len(x_in), 17):
+            for j in range(17):
+                x.append(np.stack([x_in[i+j], get_symmetric_image(i, j)], axis=-1))
+                y.append(np.array([y_in[i+j], y_in[i+abs(swap_idx[j])]]))
+
+        x, y = np.stack(x), np.stack(y)
+        np.save('x.npy', x)
+        np.save('y.npy', y)
+
+        open('done', 'w').close()
+    else:
+        x, y = np.load('x.npy'), np.load('y.npy')
+
+    return x, y
+
+
 @cached(dataio.get_test_data_generator, get_naive_body_part_labels, version=0)
 def get_naive_partitioned_body_part_test_data(mode):
     if not os.path.exists('ret.pickle'):

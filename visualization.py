@@ -4,9 +4,11 @@ import numpy as np
 import matplotlib.pyplot as plt
 import dataio
 import hand_labeling
+import aps_body_zone_models
 import pyevtk
 import os
 import matplotlib.animation
+import skimage.io
 
 
 @cached(dataio.get_all_data_generator, version=2)
@@ -53,3 +55,13 @@ def plot_zone_boundary_distributions(mode):
     for i in range(front_labels.shape[1]):
         plt.hist(front_labels[:, i], bins=100, range=(0, 1))
     plt.savefig('boundaries.png')
+
+
+@cached(aps_body_zone_models.get_naive_partitioned_symmetric_body_part_train_data, version=0)
+def view_symmetric_body_parts(mode):
+    x, y = aps_body_zone_models.get_naive_partitioned_symmetric_body_part_train_data(mode)
+
+    for i in range(len(x)):
+        image = np.zeros((256, 256, 3))
+        image[:, :, 0:2] = x[i]
+        skimage.io.imsave('%s_%s_%s.png' % (i//17 + 1, i%17 + 1, y[i][0] + y[i][1]), image)
