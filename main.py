@@ -3,6 +3,7 @@ import dataio
 import hand_labeling
 import visualization
 import aps_body_zone_models
+import aps_image_models
 import sys
 
 
