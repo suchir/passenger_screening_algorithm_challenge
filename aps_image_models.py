@@ -173,7 +173,7 @@ def get_oversampled_data_generator(x, y, batch_size, steps, proportion_true=None
         if i < steps//3:
             proportion = proportion_true
         elif steps//3 <= i < 2*steps//3:
-            proportion = proportion_true - (proportion_true-real_true)*(i-steps//3)/steps
+            proportion = proportion_true - (proportion_true-real_true)*(i-steps//3)/(steps/3)
         else:
             proportion = real_true
 
