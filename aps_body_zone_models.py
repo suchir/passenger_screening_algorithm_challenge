@@ -10,6 +10,7 @@ import glob
 import random
 import time
 import keras.preprocessing.image
+import pickle
 
 
 @cached(hand_labeling.get_body_part_labels, version=0)
@@ -134,3 +135,21 @@ def get_naive_partitioned_body_part_train_data(mode):
         x, y = np.load('x.npy'), np.load('y.npy')
 
     return x, y
+
+
+@cached(dataio.get_test_data_generator, get_naive_body_part_labels, version=0)
+def get_naive_partitioned_body_part_test_data(mode):
+    if not os.path.exists('ret.pickle'):
+        ret = {}
+        rows, cols = get_naive_body_part_labels('all')
+
+        for file, data in dataio.get_test_data_generator(mode, 'aps')():
+            images = _get_body_part_partitions(data, rows, cols)
+            ret[file] = images
+
+        with open('ret.pickle', 'wb') as f:
+            pickle.dump(ret, f)
+    else:
+        with open('ret.pickle', 'rb') as f:
+            ret = pickle.load(f)
+    return ret
