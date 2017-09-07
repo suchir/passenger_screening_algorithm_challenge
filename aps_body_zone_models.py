@@ -65,7 +65,7 @@ def _get_body_part_partition_labels():
 def _crop_image(img, tol=0.1):
     img = img / np.max(img)
     mask = img > tol
-    return img[np.ix_(mask.any(1),mask.any(0))]
+    return img[np.ix_(mask.any(1), mask.any(0))]
 
 
 def _concat_images(images):
@@ -89,7 +89,7 @@ def _concat_images(images):
     return ret
 
 
-def _get_body_part_partitions(image, rows, cols):
+def _get_grid_axes(rows, cols):
     front_cols = [2*cols[0]-cols[2], 2*cols[0]-cols[1], cols[0], cols[1], cols[2]]
     side_cols = cols[-2:]
 
@@ -97,6 +97,12 @@ def _get_body_part_partitions(image, rows, cols):
     rows = pad(rows, 660)
     front_cols = pad(front_cols, 512)
     side_cols = pad(side_cols, 512)
+
+    return front_cols, side_cols, rows
+
+
+def _get_body_part_partitions(image, rows, cols):
+    front_cols, side_cols, rows = _get_grid_axes(rows, cols)
 
     image = image.copy()
     image = [np.rot90(image[:, :, i]) for i in range(0, 16, 4)]
@@ -156,6 +162,48 @@ def get_naive_partitioned_symmetric_body_part_train_data(mode):
             for j in range(17):
                 x.append(np.stack([x_in[i+j], get_symmetric_image(i, j)], axis=-1))
                 y.append(np.array([y_in[i+j], y_in[i+abs(swap_idx[j])]]))
+
+        x, y = np.stack(x), np.stack(y)
+        np.save('x.npy', x)
+        np.save('y.npy', y)
+
+        open('done', 'w').close()
+    else:
+        x, y = np.load('x.npy'), np.load('y.npy')
+
+    return x, y
+
+
+def get_global_image_masks():
+    rows, cols = get_naive_body_part_labels('all')
+    front_cols, side_cols, rows = _get_grid_axes(rows, cols)
+    masks = np.zeros((4, 660, 512, 17))
+
+    labels = _get_body_part_partition_labels()
+    for i, label in enumerate(labels):
+        for angle, (r1, c1), (r2, c2) in label:
+            cols = front_cols if angle in (0, 2) else side_cols
+            masks[angle, rows[r1]:rows[r2+1], cols[c1]:cols[c2+1], i] = 1
+
+    return masks
+
+
+@cached(dataio.get_train_data_generator, version=0)
+def get_global_image_train_data(mode, size):
+    if not os.path.exists('done'):
+        labels = dataio.get_train_labels()
+        masks = get_global_image_masks()
+        x, y = [], []
+        for file, data in dataio.get_train_data_generator(mode, 'aps')():
+            images = []
+            for i in range(4):
+                image = np.rot90(data[:, :, 4*i])
+                if i in (1, 2):
+                    image = np.fliplr(image)
+                image = np.concatenate([image[:, :, np.newaxis], masks[i]], axis=2)
+                images.append(skimage.transform.resize(image, (size, size)))
+            x.append(np.stack(images))
+            y.append(np.array(labels[file]))
 
         x, y = np.stack(x), np.stack(y)
         np.save('x.npy', x)
