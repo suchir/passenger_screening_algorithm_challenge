@@ -8,6 +8,8 @@ import tqdm
 import os
 import pickle
 import random
+import h5py
+import time
 
 
 @cached(aps_body_zone_models.get_naive_partitioned_body_part_train_data, version=2)
@@ -208,6 +210,53 @@ def get_local_2d_cnn_test_predictions(mode):
         with open('ret.pickle', 'rb') as f:
             ret = pickle.load(f)
     return ret
+
+
+def _augment_data_generator(x, y, batch_size):
+    gen = keras.preprocessing.image.ImageDataGenerator(
+        width_shift_range=0.1,
+        height_shift_range=0.1,
+        shear_range=0.1,
+        zoom_range=0.1,
+        fill_mode='constant',
+        horizontal_flip=True,
+        vertical_flip=True,
+    )
+    seed = int(time.time())
+    for i in range(0, len(x), batch_size):
+        batch = x[i:i+batch_size].copy()
+        for j in range(len(batch)):
+            for k in range(x.shape[1]):
+                batch[j, k, :, :, 0] /= np.max(batch[j, k, :, :, 0])
+                for l in range(x.shape[4]):
+                    np.random.seed(seed)
+                    batch[j, k, :, :, l] = gen.random_transform(batch[j, k, :, :, l, np.newaxis])[:, :, 0]
+                seed += 1
+        batch[:, :, :, :, 0] += np.random.uniform(0, 0.1, batch.shape[:-1])
+        yield batch, y[i:i+batch_size]
+
+
+@cached(aps_body_zone_models.get_global_image_train_data)
+def get_augmented_global_image_data(mode, size):
+    if not os.path.exists('done'):
+        x_in, y_in = aps_body_zone_models.get_global_image_train_data(mode, size)
+        num_dsets = 5 if mode.startswith('sample') else 500
+        f = h5py.File('data.hdf5', 'w')
+        x = f.create_dataset('x', (num_dsets*len(x_in),) + x_in.shape[1:])
+        y = f.create_dataset('y', (num_dsets*len(y_in),) + y_in.shape[1:])
+        batch_size = 32
+
+        for i in tqdm.tqdm(range(num_dsets)):
+            for j, (xb, yb) in enumerate(_augment_data_generator(x_in, y_in, batch_size)):
+                st = i*len(x_in) + j*batch_size
+                x[st:st+len(xb)] = xb
+                y[st:st+len(yb)] = yb
+
+        open('done', 'w').close()
+    else:
+        f = h5py.File('data.hdf5', 'r')
+        x, y = f['x'], f['y']
+    return x, y
 
 
 @cached(get_local_2d_cnn_test_predictions, version=0)
