@@ -188,6 +188,17 @@ def get_global_image_masks():
     return masks
 
 
+def _get_images_and_masks(data, masks, size):
+    images = []
+    for i in range(4):
+        image = np.rot90(data[:, :, 4*i])
+        if i in (1, 2):
+            image = np.fliplr(image)
+        image = np.concatenate([image[:, :, np.newaxis], masks[i]], axis=2)
+        images.append(skimage.transform.resize(image, (size, size)))
+    return np.stack(images)
+
+
 @cached(dataio.get_train_data_generator, version=0)
 def get_global_image_train_data(mode, size):
     if not os.path.exists('done'):
@@ -195,14 +206,7 @@ def get_global_image_train_data(mode, size):
         masks = get_global_image_masks()
         x, y = [], []
         for file, data in dataio.get_train_data_generator(mode, 'aps')():
-            images = []
-            for i in range(4):
-                image = np.rot90(data[:, :, 4*i])
-                if i in (1, 2):
-                    image = np.fliplr(image)
-                image = np.concatenate([image[:, :, np.newaxis], masks[i]], axis=2)
-                images.append(skimage.transform.resize(image, (size, size)))
-            x.append(np.stack(images))
+            x.append(_get_images_and_masks(data, masks, size))
             y.append(np.array(labels[file]))
 
         x, y = np.stack(x), np.stack(y)
@@ -214,6 +218,30 @@ def get_global_image_train_data(mode, size):
         x, y = np.load('x.npy'), np.load('y.npy')
 
     return x, y
+
+
+@cached(dataio.get_test_data_generator, version=0)
+def get_global_image_test_data(mode, size):
+    if not os.path.exists('done'):
+        masks = get_global_image_masks()
+
+        files, x = [], []
+        for file, data in dataio.get_test_data_generator(mode, 'aps')():
+            x.append(_get_images_and_masks(data, masks, size))
+            files.append(file)
+
+        x = np.stack(x)
+        np.save('x.npy', x)
+        with open('files.txt', 'w') as f:
+            f.write('\n'.join(files))
+
+        open('done', 'w').close()
+    else:
+        x = np.load('x.npy')
+        with open('files.txt', 'r') as f:
+            files = f.read().splitlines()
+
+    return x, files
 
 
 @cached(dataio.get_test_data_generator, get_naive_body_part_labels, version=0)

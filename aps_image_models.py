@@ -215,6 +215,7 @@ def get_local_2d_cnn_test_predictions(mode):
 
 def _augment_data_generator(x, y, batch_size):
     gen = keras.preprocessing.image.ImageDataGenerator(
+        rotation_range=360,
         width_shift_range=0.1,
         height_shift_range=0.1,
         shear_range=0.1,
@@ -237,8 +238,8 @@ def _augment_data_generator(x, y, batch_size):
         yield batch, y[i:i+batch_size]
 
 
-@cached(aps_body_zone_models.get_global_image_train_data)
-def get_augmented_global_image_data(mode, size):
+@cached(aps_body_zone_models.get_global_image_train_data, version=1)
+def get_augmented_global_image_train_data(mode, size):
     if not os.path.exists('done'):
         x_in, y_in = aps_body_zone_models.get_global_image_train_data(mode, size)
         num_dsets = 5 if mode.startswith('sample') else 50
@@ -260,25 +261,52 @@ def get_augmented_global_image_data(mode, size):
     return x, y
 
 
+@cached(aps_body_zone_models.get_global_image_test_data, version=1)
+def get_augmented_global_image_test_data(mode, size):
+    if not os.path.exists('done'):
+        x_in, files = aps_body_zone_models.get_global_image_test_data(mode, size)
+        num_dsets = 5 if mode.startswith('sample') else 50
+        f = h5py.File('data.hdf5', 'w')
+        x = f.create_dataset('x', (num_dsets*len(x_in),) + x_in.shape[1:])
+        batch_size = 32
+
+        for i in tqdm.trange(num_dsets):
+            for j, (xb, _) in enumerate(_augment_data_generator(x_in, np.zeros(batch_size), batch_size)):
+                st = i*len(x_in) + j*batch_size
+                x[st:st+len(xb)] = xb
+
+        with open('files.txt', 'w') as f2:
+            f2.write('\n'.join(files))
+
+        open('done', 'w').close()
+    else:
+        f = h5py.File('data.hdf5', 'r')
+        x = f['x']
+        with open('files.txt', 'r') as f2:
+            files = f2.read().splitlines()
+    return x, files
+
+
+class SplitDenseLayer(keras.engine.topology.Layer):
+    def build(self, input_shape):
+        self.kernel = self.add_weight(name='kernel', shape=(1,)+input_shape[1:],
+                                      initializer=keras.initializers.Zeros(),
+                                      trainable=True)
+        self.bias = self.add_weight(name='bias', shape=(1, input_shape[1]),
+                                    initializer=keras.initializers.Constant(-2.2428633), # TODO fix
+                                    trainable=True)
+        super(SplitDenseLayer, self).build(input_shape)
+
+    def call(self, x):
+        return K.sum(x * self.kernel, axis=-1) + self.bias
+
+    def compute_output_shape(self, input_shape):
+        return input_shape[:-1]
+
+
 def _global_model(nfilters, nconv, nlayers, learning_rate, size, default_pred, fc_per_zone):
     K.set_learning_phase(1)
-    bias = np.log(default_pred / (1 - default_pred))
-
-    class SplitDenseLayer(keras.engine.topology.Layer):
-        def build(self, input_shape):
-            self.kernel = self.add_weight(name='kernel', shape=(1,)+input_shape[1:],
-                                          initializer=keras.initializers.Zeros(),
-                                          trainable=True)
-            self.bias = self.add_weight(name='bias', shape=(1, input_shape[1]),
-                                        initializer=keras.initializers.Constant(bias),
-                                        trainable=True)
-            super(SplitDenseLayer, self).build(input_shape)
-        
-        def call(self, x):
-            return K.sum(x * self.kernel, axis=-1) + self.bias
-        
-        def compute_output_shape(self, input_shape):
-            return input_shape[:-1]
+    bias = np.log(default_pred / (1 - default_pred)) # TODO use
 
     cnn_inputs = keras.layers.Input(shape=(size, size, 18))
     cnn = keras.layers.Lambda(lambda x: x[..., 0:1])(cnn_inputs)
@@ -317,15 +345,15 @@ def _global_model(nfilters, nconv, nlayers, learning_rate, size, default_pred, f
     return model
 
 
-@cached(get_augmented_global_image_data, version=2)
+@cached(get_augmented_global_image_train_data, version=2)
 def train_global_2d_cnn_model(mode, per_zone_fc):
     assert mode in ('train', 'sample_train')
 
+    batch_size = 32
     if not os.path.exists('model.h5'):
         train = 'train' if mode == 'train' else 'sample_train'
         valid = 'valid' if mode == 'train' else 'sample_valid'
 
-        batch_size = 32
         image_size = 128
         repeat_batch = 5
         if mode == 'train':
@@ -333,15 +361,15 @@ def train_global_2d_cnn_model(mode, per_zone_fc):
         else:
             epochs = 1
 
-        x_train, y_train = get_augmented_global_image_data(train, image_size)
-        x_valid, y_valid = get_augmented_global_image_data(valid, image_size)
+        x_train, y_train = get_augmented_global_image_train_data(train, image_size)
+        x_valid, y_valid = get_augmented_global_image_train_data(valid, image_size)
         y_train, y_valid = y_train[()], y_valid[()]
         model = _global_model(32, 3, 3, 1e-4, 128, np.mean(y_train), per_zone_fc)
 
         for epoch in tqdm.trange(epochs, desc='epochs'):
-            batchsize = int(10e9) // x_train[0, ...].nbytes
-            for i in tqdm.trange(0, len(x_train), batchsize, desc='batches'):
-                x_batch, y_batch = x_train[i:i+batchsize], y_train[i:i+batchsize]
+            chunk_size = int(10e9) // x_train[0, ...].nbytes
+            for i in tqdm.trange(0, len(x_train), chunk_size, desc='chunks'):
+                x_batch, y_batch = x_train[i:i+chunk_size], y_train[i:i+chunk_size]
                 for batch in range(repeat_batch):
                     model.fit(x_batch, y_batch, batch_size=batch_size)
 
@@ -350,13 +378,43 @@ def train_global_2d_cnn_model(mode, per_zone_fc):
             f.write(str(valid_loss))
         model.save('model.h5')
     else:
-        model = keras.models.load_model('model.h5')
+        K.set_learning_phase(1)
+        model = keras.models.load_model('model.h5', custom_objects={'SplitDenseLayer': SplitDenseLayer})
 
-    return model
+    def predict(x):
+        return model.predict(x, batch_size=batch_size)
 
+    return predict
+
+
+@cached(get_augmented_global_image_test_data, train_global_2d_cnn_model, version=2)
+def get_global_2d_cnn_test_predictions(mode):
+    assert mode in ('test', 'sample_test')
+
+    if not os.path.exists('ret.pickle'):
+        predictor = train_global_2d_cnn_model('train' if mode == 'test' else 'sample_train', True)
+        x, files = get_augmented_global_image_test_data(mode, 128)
+
+        y = predictor(x)
+        y = np.mean(np.reshape(y, (-1, len(x), 17)), axis=0)
+        y = np.clip(y, 0.025, 0.975)  # hack from validation data
+        ret = {x:y for x, y in zip(files, y)}
+
+        with open('ret.pickle', 'wb') as f:
+            pickle.dump(ret, f)
+    else:
+        with open('ret.pickle', 'rb') as f:
+            ret = pickle.load(f)
+    return ret
 
 
 @cached(get_local_2d_cnn_test_predictions, version=0)
 def write_local_2d_cnn_test_predictions(mode):
     preds = get_local_2d_cnn_test_predictions(mode)
+    dataio.write_answer_csv(preds)
+
+
+@cached(get_global_2d_cnn_test_predictions, version=0)
+def write_global_2d_cnn_test_predictions(mode):
+    preds = get_global_2d_cnn_test_predictions(mode)
     dataio.write_answer_csv(preds)
