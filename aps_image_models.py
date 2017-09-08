@@ -1,4 +1,5 @@
 from caching import cached, read_input_dir
+from keras import backend as K
 
 import numpy as np
 import dataio
@@ -240,7 +241,7 @@ def _augment_data_generator(x, y, batch_size):
 def get_augmented_global_image_data(mode, size):
     if not os.path.exists('done'):
         x_in, y_in = aps_body_zone_models.get_global_image_train_data(mode, size)
-        num_dsets = 5 if mode.startswith('sample') else 500
+        num_dsets = 5 if mode.startswith('sample') else 50
         f = h5py.File('data.hdf5', 'w')
         x = f.create_dataset('x', (num_dsets*len(x_in),) + x_in.shape[1:])
         y = f.create_dataset('y', (num_dsets*len(y_in),) + y_in.shape[1:])
@@ -257,6 +258,102 @@ def get_augmented_global_image_data(mode, size):
         f = h5py.File('data.hdf5', 'r')
         x, y = f['x'], f['y']
     return x, y
+
+
+def _global_model(nfilters, nconv, nlayers, learning_rate, size, default_pred, fc_per_zone):
+    K.set_learning_phase(1)
+    bias = np.log(default_pred / (1 - default_pred))
+
+    class SplitDenseLayer(keras.engine.topology.Layer):
+        def build(self, input_shape):
+            self.kernel = self.add_weight(name='kernel', shape=(1,)+input_shape[1:],
+                                          initializer=keras.initializers.Zeros(),
+                                          trainable=True)
+            self.bias = self.add_weight(name='bias', shape=(1, input_shape[1]),
+                                        initializer=keras.initializers.Constant(bias),
+                                        trainable=True)
+            super(SplitDenseLayer, self).build(input_shape)
+        
+        def call(self, x):
+            return K.sum(x * self.kernel, axis=-1) + self.bias
+        
+        def compute_output_shape(self, input_shape):
+            return input_shape[:-1]
+
+    cnn_inputs = keras.layers.Input(shape=(size, size, 18))
+    cnn = keras.layers.Lambda(lambda x: x[..., 0:1])(cnn_inputs)
+    for _ in range(nlayers):
+        for _ in range(nconv):
+            cnn = keras.layers.BatchNormalization()(cnn)
+            cnn = keras.layers.Conv2D(nfilters, (3, 3), padding='same', activation='relu')(cnn)
+        cnn = keras.layers.MaxPool2D((2, 2), (1, 1), padding='same')(cnn)
+    cnn = keras.layers.core.Reshape((size * size, -1))(cnn)
+    cnn = keras.layers.core.Permute((2, 1))(cnn)
+    body_zones = keras.layers.Lambda(lambda x: x[..., 1:])(cnn_inputs)
+    body_zones = keras.layers.core.Reshape((size * size, -1))(body_zones)
+    zone_features = keras.layers.core.Lambda(lambda x: K.batch_dot(x[0], x[1]))([cnn, body_zones])
+    image_model = keras.models.Model(cnn_inputs, zone_features)
+
+    inputs = keras.layers.Input(shape=(4, size, size, 18))
+    all_zone_features = keras.layers.wrappers.TimeDistributed(image_model)(inputs)
+    all_zone_features = keras.layers.core.Reshape((-1, 17))(all_zone_features)
+    all_zone_features = keras.layers.core.Permute((2, 1))(all_zone_features)
+
+    if fc_per_zone:
+        predictions = SplitDenseLayer()(all_zone_features)
+        predictions = keras.layers.Activation(keras.activations.sigmoid)(predictions)
+    else:
+        predictions = keras.layers.wrappers.TimeDistributed(
+            keras.layers.Dense(1, activation='sigmoid',
+                               kernel_initializer=keras.initializers.Constant(0),
+                               bias_initializer=keras.initializers.Constant(bias)))(all_zone_features)
+        predictions = keras.layers.Reshape((-1,))(predictions)
+
+
+    model = keras.models.Model(inputs=inputs, outputs=predictions)
+
+    optimizer = keras.optimizers.Adam(learning_rate)
+    model.compile(optimizer=optimizer, loss='binary_crossentropy')
+    return model
+
+
+@cached(get_augmented_global_image_data, version=2)
+def train_global_2d_cnn_model(mode, per_zone_fc):
+    assert mode in ('train', 'sample_train')
+
+    if not os.path.exists('model.h5'):
+        train = 'train' if mode == 'train' else 'sample_train'
+        valid = 'valid' if mode == 'train' else 'sample_valid'
+
+        batch_size = 32
+        image_size = 128
+        repeat_batch = 5
+        if mode == 'train':
+            epochs = 1
+        else:
+            epochs = 1
+
+        x_train, y_train = get_augmented_global_image_data(train, image_size)
+        x_valid, y_valid = get_augmented_global_image_data(valid, image_size)
+        y_train, y_valid = y_train[()], y_valid[()]
+        model = _global_model(32, 3, 3, 1e-4, 128, np.mean(y_train), per_zone_fc)
+
+        for epoch in tqdm.trange(epochs, desc='epochs'):
+            batchsize = int(10e9) // x_train[0, ...].nbytes
+            for i in tqdm.trange(0, len(x_train), batchsize, desc='batches'):
+                x_batch, y_batch = x_train[i:i+batchsize], y_train[i:i+batchsize]
+                for batch in range(repeat_batch):
+                    model.fit(x_batch, y_batch, batch_size=batch_size)
+
+        valid_loss = model.evaluate(x_valid, y_valid)
+        with open('performance.txt', 'w') as f:
+            f.write(str(valid_loss))
+        model.save('model.h5')
+    else:
+        model = keras.models.load_model('model.h5')
+
+    return model
+
 
 
 @cached(get_local_2d_cnn_test_predictions, version=0)
