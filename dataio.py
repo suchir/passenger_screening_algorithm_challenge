@@ -209,10 +209,10 @@ def get_train_data_generator(mode, filetype):
 
 @cached(version=5)
 def get_test_data_generator(mode, filetype):
-    assert mode in ('test')
+    assert mode in ('test', 'sample_test')
 
     labels = get_train_labels()
-    keep = lambda i, x: x not in labels
+    keep = lambda i, x: x not in labels and (mode != 'sample_test' or i < 100)
     return _get_data_generator(filetype, keep)
 
 
