@@ -304,7 +304,7 @@ class SplitDenseLayer(keras.engine.topology.Layer):
         return input_shape[:-1]
 
 
-def _global_model(nfilters, nconv, nlayers, learning_rate, size, default_pred, fc_per_zone):
+def _global_model(nfilters, nconv, nlayers, learning_rate, size, default_pred):
     K.set_learning_phase(1)
     bias = np.log(default_pred / (1 - default_pred)) # TODO use
 
@@ -327,16 +327,8 @@ def _global_model(nfilters, nconv, nlayers, learning_rate, size, default_pred, f
     all_zone_features = keras.layers.core.Reshape((-1, 17))(all_zone_features)
     all_zone_features = keras.layers.core.Permute((2, 1))(all_zone_features)
 
-    if fc_per_zone:
-        predictions = SplitDenseLayer()(all_zone_features)
-        predictions = keras.layers.Activation(keras.activations.sigmoid)(predictions)
-    else:
-        predictions = keras.layers.wrappers.TimeDistributed(
-            keras.layers.Dense(1, activation='sigmoid',
-                               kernel_initializer=keras.initializers.Constant(0),
-                               bias_initializer=keras.initializers.Constant(bias)))(all_zone_features)
-        predictions = keras.layers.Reshape((-1,))(predictions)
-
+    predictions = SplitDenseLayer()(all_zone_features)
+    predictions = keras.layers.Activation(keras.activations.sigmoid)(predictions)
 
     model = keras.models.Model(inputs=inputs, outputs=predictions)
 
@@ -345,8 +337,8 @@ def _global_model(nfilters, nconv, nlayers, learning_rate, size, default_pred, f
     return model
 
 
-@cached(get_augmented_global_image_train_data, version=2)
-def train_global_2d_cnn_model(mode, per_zone_fc):
+@cached(get_augmented_global_image_train_data, version=3)
+def train_global_2d_cnn_model(mode):
     assert mode in ('train', 'sample_train')
 
     batch_size = 32
@@ -364,7 +356,7 @@ def train_global_2d_cnn_model(mode, per_zone_fc):
         x_train, y_train = get_augmented_global_image_train_data(train, image_size)
         x_valid, y_valid = get_augmented_global_image_train_data(valid, image_size)
         y_train, y_valid = y_train[()], y_valid[()]
-        model = _global_model(32, 3, 3, 1e-4, 128, np.mean(y_train), per_zone_fc)
+        model = _global_model(32, 3, 3, 1e-4, 128, np.mean(y_train))
 
         for epoch in tqdm.trange(epochs, desc='epochs'):
             chunk_size = int(10e9) // x_train[0, ...].nbytes
@@ -392,7 +384,7 @@ def get_global_2d_cnn_test_predictions(mode):
     assert mode in ('test', 'sample_test')
 
     if not os.path.exists('ret.pickle'):
-        predictor = train_global_2d_cnn_model('train' if mode == 'test' else 'sample_train', True)
+        predictor = train_global_2d_cnn_model('train' if mode == 'test' else 'sample_train')
         x, files = get_augmented_global_image_test_data(mode, 128)
 
         y = predictor(x)
