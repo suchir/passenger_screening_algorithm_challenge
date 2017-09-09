@@ -22,7 +22,7 @@ def read_input_dir(dir=''):
     return change_directory('input\\%s' % dir)
 
 
-cached_functions = {}
+_fn_stack = []
 
 
 class CachedFunction(object):
@@ -32,14 +32,21 @@ class CachedFunction(object):
         self.version = sum(x.version for x in self.ancestors)
         self.dirname = '%s-%s' % (fn.__name__, self.version)
         self._fn = fn
-        cached_functions[fn.__name__] = self
 
     def __call__(self, *args):
         strargs = '-'.join(str(arg) for arg in args)
-        print('running %s%s... ' % (self._fn.__name__, args))
+        indent = '| ' * len(_fn_stack)
+        pretty_args = str(args)
+        if len(args) == 1:
+            pretty_args = pretty_args.replace(',', '')
+        print('%s|-> executing %s%s ' % (indent, self._fn.__name__, pretty_args))
+
+        _fn_stack.append(self)
         with change_directory('cache\\%s-%s' % (self.dirname, strargs)):
             ret = self._fn(*args)
-        print('%s%s completed' % (self._fn.__name__, args))
+        _fn_stack.pop()
+
+        print('%s|-> completed %s%s' % (indent, self._fn.__name__, pretty_args))
         return ret
 
 
