@@ -215,7 +215,6 @@ def get_local_2d_cnn_test_predictions(mode):
 
 def _augment_data_generator(x, y, batch_size):
     gen = keras.preprocessing.image.ImageDataGenerator(
-        rotation_range=360,
         width_shift_range=0.1,
         height_shift_range=0.1,
         shear_range=0.1,
@@ -238,7 +237,7 @@ def _augment_data_generator(x, y, batch_size):
         yield batch, y[i:i+batch_size]
 
 
-@cached(aps_body_zone_models.get_global_image_train_data, version=1)
+@cached(aps_body_zone_models.get_global_image_train_data, version=2)
 def get_augmented_global_image_train_data(mode, size):
     if not os.path.exists('done'):
         x_in, y_in = aps_body_zone_models.get_global_image_train_data(mode, size)
@@ -261,7 +260,7 @@ def get_augmented_global_image_train_data(mode, size):
     return x, y
 
 
-@cached(aps_body_zone_models.get_global_image_test_data, version=1)
+@cached(aps_body_zone_models.get_global_image_test_data, version=2)
 def get_augmented_global_image_test_data(mode, size):
     if not os.path.exists('done'):
         x_in, files = aps_body_zone_models.get_global_image_test_data(mode, size)
