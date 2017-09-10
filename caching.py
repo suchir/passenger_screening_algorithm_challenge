@@ -39,14 +39,15 @@ class CachedFunction(object):
         pretty_args = str(args)
         if len(args) == 1:
             pretty_args = pretty_args.replace(',', '')
-        print('%s|-> executing %s%s ' % (indent, self._fn.__name__, pretty_args))
+        called = '%s%s version %s' % (self._fn.__name__, pretty_args, self.version)
+        print('%s|-> executing %s ' % (indent, called))
 
         _fn_stack.append(self)
         with change_directory('cache\\%s-%s' % (self.dirname, strargs)):
             ret = self._fn(*args)
         _fn_stack.pop()
 
-        print('%s|-> completed %s%s' % (indent, self._fn.__name__, pretty_args))
+        print('%s|-> completed %s' % (indent, called))
         return ret
 
 
