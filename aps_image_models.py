@@ -244,14 +244,15 @@ def get_augmented_global_image_train_data(mode, size):
         num_dsets = 5 if mode.startswith('sample') else 50
         f = h5py.File('data.hdf5', 'w')
         x = f.create_dataset('x', (num_dsets*len(x_in),) + x_in.shape[1:])
-        y = f.create_dataset('y', (num_dsets*len(y_in),) + y_in.shape[1:])
         batch_size = 32
 
         for i in tqdm.tqdm(range(num_dsets)):
             for j, (xb, yb) in enumerate(_augment_data_generator(x_in, y_in, batch_size)):
                 st = i*len(x_in) + j*batch_size
                 x[st:st+len(xb)] = xb
-                y[st:st+len(yb)] = yb
+
+        y = f.create_dataset('y', (num_dsets*len(y_in),) + y_in.shape[1:])
+        y[()] = np.tile(y_in, (num_dsets, 1))
 
         open('done', 'w').close()
     else:
