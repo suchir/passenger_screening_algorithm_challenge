@@ -261,7 +261,7 @@ def get_augmented_global_image_train_data(mode, size):
     return x, y
 
 
-@cached(aps_body_zone_models.get_global_image_test_data, version=2)
+@cached(aps_body_zone_models.get_global_image_test_data, version=1)
 def get_augmented_global_image_test_data(mode, size):
     if not os.path.exists('done'):
         x_in, files = aps_body_zone_models.get_global_image_test_data(mode, size)
@@ -310,11 +310,18 @@ def _global_model(nfilters, nconv, nlayers, learning_rate, size, default_pred):
 
     cnn_inputs = keras.layers.Input(shape=(size, size, 18))
     cnn = keras.layers.Lambda(lambda x: x[..., 0:1])(cnn_inputs)
-    for _ in range(nlayers):
+
+    for i in range(nlayers):
         for _ in range(nconv):
             cnn = keras.layers.BatchNormalization()(cnn)
-            cnn = keras.layers.Conv2D(nfilters, (3, 3), padding='same', activation='relu')(cnn)
-        cnn = keras.layers.MaxPool2D((2, 2), (1, 1), padding='same')(cnn)
+            cnn = keras.layers.Conv2D(nfilters*2**i, (3, 3), padding='same', activation='relu')(cnn)
+        cnn = keras.layers.MaxPool2D()(cnn)
+    for i in range(nlayers):
+        cnn = keras.layers.UpSampling2D()(cnn)
+        for _ in range(nconv):
+            cnn = keras.layers.BatchNormalization()(cnn)
+            cnn = keras.layers.Conv2D(nfilters*2**(nlayers-1-i), (3, 3), padding='same', activation='relu')(cnn)
+
     cnn = keras.layers.core.Reshape((size * size, -1))(cnn)
     cnn = keras.layers.core.Permute((2, 1))(cnn)
     body_zones = keras.layers.Lambda(lambda x: x[..., 1:])(cnn_inputs)
@@ -327,7 +334,8 @@ def _global_model(nfilters, nconv, nlayers, learning_rate, size, default_pred):
     all_zone_features = keras.layers.core.Reshape((-1, 17))(all_zone_features)
     all_zone_features = keras.layers.core.Permute((2, 1))(all_zone_features)
 
-    predictions = SplitDenseLayer()(all_zone_features)
+    predictions = keras.layers.Dropout(0.5)(all_zone_features)
+    predictions = SplitDenseLayer()(predictions)
     predictions = keras.layers.Activation(keras.activations.sigmoid)(predictions)
 
     model = keras.models.Model(inputs=inputs, outputs=predictions)
@@ -351,12 +359,12 @@ def train_global_2d_cnn_model(mode):
         if mode == 'train':
             epochs = 1
         else:
-            epochs = 1
+            epochs = 10
 
         x_train, y_train = get_augmented_global_image_train_data(train, image_size)
         x_valid, y_valid = get_augmented_global_image_train_data(valid, image_size)
         y_train, y_valid = y_train[()], y_valid[()]
-        model = _global_model(32, 3, 3, 1e-4, 128, np.mean(y_train))
+        model = _global_model(8, 2, 4, 1e-4, image_size, np.mean(y_train))
 
         for epoch in tqdm.trange(epochs, desc='epochs'):
             chunk_size = int(10e9) // x_train[0, ...].nbytes
@@ -373,10 +381,7 @@ def train_global_2d_cnn_model(mode):
         K.set_learning_phase(1)
         model = keras.models.load_model('model.h5', custom_objects={'SplitDenseLayer': SplitDenseLayer})
 
-    def predict(x):
-        return model.predict(x, batch_size=batch_size)
-
-    return predict
+    return model
 
 
 @cached(get_augmented_global_image_test_data, train_global_2d_cnn_model, version=2)
@@ -384,12 +389,11 @@ def get_global_2d_cnn_test_predictions(mode):
     assert mode in ('test', 'sample_test')
 
     if not os.path.exists('ret.pickle'):
-        predictor = train_global_2d_cnn_model('train' if mode == 'test' else 'sample_train')
+        model = train_global_2d_cnn_model('train' if mode == 'test' else 'sample_train')
         x, files = get_augmented_global_image_test_data(mode, 128)
 
-        y = predictor(x)
+        y = model.predict(x, batch_size=32)
         y = np.mean(np.reshape(y, (-1, len(x), 17)), axis=0)
-        y = np.clip(y, 0.025, 0.975)  # hack from validation data
         ret = {x:y for x, y in zip(files, y)}
 
         with open('ret.pickle', 'wb') as f:
@@ -409,4 +413,6 @@ def write_local_2d_cnn_test_predictions(mode):
 @cached(get_global_2d_cnn_test_predictions, version=0)
 def write_global_2d_cnn_test_predictions(mode):
     preds = get_global_2d_cnn_test_predictions(mode)
+    for pred in preds:
+        preds[pred] = np.clip(preds[pred], 0.025, 0.975)
     dataio.write_answer_csv(preds)
