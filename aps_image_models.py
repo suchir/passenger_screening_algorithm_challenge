@@ -314,16 +314,16 @@ def _global_model(nfilters, nconv, nlayers, learning_rate, size, default_pred, s
     cnn_inputs = keras.layers.Input(shape=(size, size, 18+symmetric))
     cnn = keras.layers.Lambda(lambda x: x[..., 0:1+symmetric])(cnn_inputs)
 
-    for i in range(nlayers):
+    for _ in range(nlayers):
         for _ in range(nconv):
             cnn = keras.layers.BatchNormalization()(cnn)
-            cnn = keras.layers.Conv2D(nfilters*2**i, (3, 3), padding='same', activation='relu')(cnn)
+            cnn = keras.layers.Conv2D(nfilters, (3, 3), padding='same', activation='relu')(cnn)
         cnn = keras.layers.MaxPool2D()(cnn)
-    for i in range(nlayers):
+    for _ in range(nlayers):
         cnn = keras.layers.UpSampling2D()(cnn)
         for _ in range(nconv):
             cnn = keras.layers.BatchNormalization()(cnn)
-            cnn = keras.layers.Conv2D(nfilters*2**(nlayers-1-i), (3, 3), padding='same', activation='relu')(cnn)
+            cnn = keras.layers.Conv2D(nfilters, (3, 3), padding='same', activation='relu')(cnn)
 
     cnn = keras.layers.core.Reshape((size * size, -1))(cnn)
     cnn = keras.layers.core.Permute((2, 1))(cnn)
@@ -367,7 +367,7 @@ def train_global_2d_cnn_model(mode, symmetric):
         x_train, y_train = get_augmented_global_image_train_data(train, image_size, symmetric)
         x_valid, y_valid = get_augmented_global_image_train_data(valid, image_size, symmetric)
         y_train, y_valid = y_train[()], y_valid[()]
-        model = _global_model(8, 2, 4, 1e-4, image_size, np.mean(y_train), symmetric)
+        model = _global_model(32, 2, 3, 1e-4, image_size, np.mean(y_train), symmetric)
 
         for epoch in tqdm.trange(epochs, desc='epochs'):
             chunk_size = int(10e9) // x_train[0, ...].nbytes
