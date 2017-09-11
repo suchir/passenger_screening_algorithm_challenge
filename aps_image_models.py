@@ -291,12 +291,16 @@ def get_augmented_global_image_test_data(mode, size):
 
 
 class SplitDenseLayer(keras.engine.topology.Layer):
+    def __init__(self, default_pred, **kwargs):
+        self.default_bias = np.log(default_pred / (1 - default_pred))
+        super().__init__(**kwargs)
+
     def build(self, input_shape):
         self.kernel = self.add_weight(name='kernel', shape=(1,)+input_shape[1:],
                                       initializer=keras.initializers.Zeros(),
                                       trainable=True)
         self.bias = self.add_weight(name='bias', shape=(1, input_shape[1]),
-                                    initializer=keras.initializers.Constant(-2.2428633), # TODO fix
+                                    initializer=keras.initializers.Constant(self.default_bias),
                                     trainable=True)
         super(SplitDenseLayer, self).build(input_shape)
 
@@ -307,12 +311,12 @@ class SplitDenseLayer(keras.engine.topology.Layer):
         return input_shape[:-1]
 
 
-def _global_model(nfilters, nconv, nlayers, learning_rate, size, default_pred, symmetric):
-    K.set_learning_phase(1)
-    bias = np.log(default_pred / (1 - default_pred)) # TODO use
-
-    cnn_inputs = keras.layers.Input(shape=(size, size, 18+symmetric))
-    cnn = keras.layers.Lambda(lambda x: x[..., 0:1+symmetric])(cnn_inputs)
+def _global_cnn(nfilters, nconv, nlayers, image_size, symmetric):
+    cnn_inputs = keras.layers.Input(shape=(image_size, image_size, 18+symmetric))
+    if symmetric:
+        cnn = keras.layers.Lambda(lambda x: x[..., 0:2])(cnn_inputs)
+    else:
+        cnn = keras.layers.Lambda(lambda x: x[..., 0:1])(cnn_inputs)
 
     for _ in range(nlayers):
         for _ in range(nconv):
@@ -325,31 +329,73 @@ def _global_model(nfilters, nconv, nlayers, learning_rate, size, default_pred, s
             cnn = keras.layers.BatchNormalization()(cnn)
             cnn = keras.layers.Conv2D(nfilters, (3, 3), padding='same', activation='relu')(cnn)
 
-    cnn = keras.layers.core.Reshape((size * size, -1))(cnn)
+    cnn = keras.layers.core.Reshape((image_size * image_size, -1))(cnn)
     cnn = keras.layers.core.Permute((2, 1))(cnn)
-    body_zones = keras.layers.Lambda(lambda x: x[..., 1+symmetric:])(cnn_inputs)
-    body_zones = keras.layers.core.Reshape((size * size, -1))(body_zones)
+    if symmetric:
+        body_zones = keras.layers.Lambda(lambda x: x[..., 2:])(cnn_inputs)
+    else:
+        body_zones = keras.layers.Lambda(lambda x: x[..., 1:])(cnn_inputs)
+    body_zones = keras.layers.core.Reshape((image_size * image_size, -1))(body_zones)
     zone_features = keras.layers.core.Lambda(lambda x: K.batch_dot(x[0], x[1]))([cnn, body_zones])
     image_model = keras.models.Model(cnn_inputs, zone_features)
+    return image_model
+
+
+def _global_model(nfilters, nconv, nlayers, image_size, default_pred, symmetric):
+    K.set_learning_phase(1)
+
+    cnn = _global_cnn(nfilters, nconv, nlayers, image_size, symmetric)
 
     inputs = keras.layers.Input(shape=(4, size, size, 18+symmetric))
-    all_zone_features = keras.layers.wrappers.TimeDistributed(image_model)(inputs)
+    all_zone_features = keras.layers.wrappers.TimeDistributed(cnn)(inputs)
     all_zone_features = keras.layers.core.Reshape((-1, 17))(all_zone_features)
     all_zone_features = keras.layers.core.Permute((2, 1))(all_zone_features)
 
     predictions = keras.layers.Dropout(0.5)(all_zone_features)
-    predictions = SplitDenseLayer()(predictions)
+    predictions = SplitDenseLayer(default_pred)(predictions)
     predictions = keras.layers.Activation(keras.activations.sigmoid)(predictions)
 
     model = keras.models.Model(inputs=inputs, outputs=predictions)
-
-    optimizer = keras.optimizers.Adam(learning_rate)
-    model.compile(optimizer=optimizer, loss='binary_crossentropy')
     return model
 
 
-@cached(get_augmented_global_image_train_data, version=3)
-def train_global_2d_cnn_model(mode, symmetric):
+def _siamese_model(nfilters, nconv, nlayers, image_size):
+    K.set_learning_phase(1)
+
+    pair_input = keras.layers.Input(shape=(image_size, image_size, 19))
+    image_1 = keras.layers.Lambda(lambda x: x[..., 0:1])(pair_input)
+    image_2 = keras.layers.Lambda(lambda x: x[..., 1:2])(pair_input)
+    zones = keras.layers.Lambda(lambda x: x[..., 2:])(pair_input)
+    input_1 = keras.layers.Concatenate()([image_1, zones])
+    input_2 = keras.layers.Concatenate()([image_2, zones])
+
+    cnn = _global_cnn(nfilters, nconv, nlayers, image_size, False)
+    features_1 = keras.layers.Reshape((-1, 17, 1))(cnn(input_1))
+    features_2 = keras.layers.Reshape((-1, 17, 1))(cnn(input_2))
+    pair_output = keras.layers.Concatenate()([features_1, features_2])
+
+    pair_model = keras.models.Model(inputs=pair_input, outputs=pair_output)
+
+    inputs = keras.layers.Input(shape=(4, image_size, image_size, 19))
+    features = keras.layers.TimeDistributed(pair_model)(inputs)
+    features = keras.layers.core.Reshape((-1, 17, 2))(features)
+    features = keras.layers.core.Permute((2, 3, 1))(features)
+
+    preds = keras.layers.Lambda(lambda x: K.mean(K.square(x[..., 0, :] - x[..., 1, :]), axis=-1))(features)
+    preds = keras.layers.BatchNormalization()(preds)
+    preds = keras.layers.Activation(keras.activations.sigmoid)(preds)
+
+    model = keras.models.Model(inputs=inputs, outputs=preds)
+    return model
+
+
+def _siamese_preds(y):
+    idx = np.array([3, 4, 1, 2, 5, 7, 6, 10, 9, 8, 12, 11, 14, 13, 16, 15, 17]) - 1
+    return y == y[:, idx]
+
+
+@cached(get_augmented_global_image_train_data, version=0)
+def train_global_siamese_2d_cnn_model(mode, image_size):
     assert mode in ('train', 'sample_train')
 
     batch_size = 32
@@ -357,7 +403,43 @@ def train_global_2d_cnn_model(mode, symmetric):
         train = 'train' if mode == 'train' else 'sample_train'
         valid = 'valid' if mode == 'train' else 'sample_valid'
 
-        image_size = 128
+        if mode == 'train':
+            epochs = 5
+        else:
+            epochs = 10
+
+        x_train, y_train = get_augmented_global_image_train_data(train, image_size, True)
+        x_valid, y_valid = get_augmented_global_image_train_data(valid, image_size, True)
+        y_train, y_valid = _siamese_preds(y_train[()]), _siamese_preds(y_valid[()])
+        y_mean = np.mean(y_train)
+        print('default loss = %s' % (-(y_mean*np.log(y_mean) + (1-y_mean)*np.log(1-y_mean))))
+
+        model = _siamese_model(32, 2, 3, image_size)
+        optimizer = keras.optimizers.Adam(1e-1)
+        model.compile(optimizer=optimizer, loss='binary_crossentropy')
+
+        model.fit(x_train, y_train, epochs=epochs, batch_size=batch_size, shuffle=False)
+
+        valid_loss = model.evaluate(x_valid, y_valid)
+        with open('performance.txt', 'w') as f:
+            f.write(str(valid_loss))
+        model.save('model.h5')
+    else:
+        K.set_learning_phase(1)
+        model = keras.models.load_model('model.h5')
+
+    return model
+
+
+@cached(get_augmented_global_image_train_data, version=3)
+def train_global_2d_cnn_model(mode, image_size, symmetric):
+    assert mode in ('train', 'sample_train')
+
+    batch_size = 32
+    if not os.path.exists('model.h5'):
+        train = 'train' if mode == 'train' else 'sample_train'
+        valid = 'valid' if mode == 'train' else 'sample_valid'
+
         repeat_batch = 5
         if mode == 'train':
             epochs = 1
@@ -367,7 +449,10 @@ def train_global_2d_cnn_model(mode, symmetric):
         x_train, y_train = get_augmented_global_image_train_data(train, image_size, symmetric)
         x_valid, y_valid = get_augmented_global_image_train_data(valid, image_size, symmetric)
         y_train, y_valid = y_train[()], y_valid[()]
-        model = _global_model(32, 2, 3, 1e-4, image_size, np.mean(y_train), symmetric)
+
+        model = _global_model(32, 2, 3, image_size, np.mean(y_train), symmetric)
+        optimizer = keras.optimizers.Adam(1e-4)
+        model.compile(optimizer=optimizer, loss='binary_crossentropy')
 
         for epoch in tqdm.trange(epochs, desc='epochs'):
             chunk_size = int(10e9) // x_train[0, ...].nbytes
