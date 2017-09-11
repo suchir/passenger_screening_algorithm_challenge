@@ -213,7 +213,7 @@ def get_local_2d_cnn_test_predictions(mode):
     return ret
 
 
-def _augment_data_generator(x, y, batch_size):
+def _augment_data_generator(x, y, batch_size, symmetric):
     gen = keras.preprocessing.image.ImageDataGenerator(
         width_shift_range=0.1,
         height_shift_range=0.1,
@@ -228,26 +228,29 @@ def _augment_data_generator(x, y, batch_size):
         batch = x[i:i+batch_size].copy()
         for j in range(len(batch)):
             for k in range(x.shape[1]):
-                batch[j, k, :, :, 0] /= np.max(batch[j, k, :, :, 0])
+                batch[j, k, :, :, 0:1+symmetric] /= np.max(batch[j, k, :, :, 0:1+symmetric])
                 for l in range(x.shape[4]):
                     np.random.seed(seed)
-                    batch[j, k, :, :, l] = gen.random_transform(batch[j, k, :, :, l, np.newaxis])[:, :, 0]
+                    batch[j, k, :, :, l] = \
+                        gen.random_transform(batch[j, k, :, :, l, np.newaxis])[:, :, 0]
                 seed += 1
-        batch[:, :, :, :, 0] += np.random.uniform(0, 0.1, batch.shape[:-1])
+        batch[:, :, :, :, 0:1+symmetric] += np.random.uniform(0, 0.1,
+                                                              batch.shape[:-1] + (1+symmetric,))
         yield batch, y[i:i+batch_size]
 
 
 @cached(aps_body_zone_models.get_global_image_train_data, version=2)
-def get_augmented_global_image_train_data(mode, size):
+def get_augmented_global_image_train_data(mode, size, symmetric):
     if not os.path.exists('done'):
-        x_in, y_in = aps_body_zone_models.get_global_image_train_data(mode, size)
+        x_in, y_in = aps_body_zone_models.get_global_image_train_data(mode, size, symmetric)
         num_dsets = 5 if mode.startswith('sample') else 50
         f = h5py.File('data.hdf5', 'w')
         x = f.create_dataset('x', (num_dsets*len(x_in),) + x_in.shape[1:])
         batch_size = 32
 
         for i in tqdm.tqdm(range(num_dsets)):
-            for j, (xb, yb) in enumerate(_augment_data_generator(x_in, y_in, batch_size)):
+            for j, (xb, yb) in enumerate(_augment_data_generator(x_in, y_in, batch_size,
+                                                                 symmetric)):
                 st = i*len(x_in) + j*batch_size
                 x[st:st+len(xb)] = xb
 
@@ -304,12 +307,12 @@ class SplitDenseLayer(keras.engine.topology.Layer):
         return input_shape[:-1]
 
 
-def _global_model(nfilters, nconv, nlayers, learning_rate, size, default_pred):
+def _global_model(nfilters, nconv, nlayers, learning_rate, size, default_pred, symmetric):
     K.set_learning_phase(1)
     bias = np.log(default_pred / (1 - default_pred)) # TODO use
 
-    cnn_inputs = keras.layers.Input(shape=(size, size, 18))
-    cnn = keras.layers.Lambda(lambda x: x[..., 0:1])(cnn_inputs)
+    cnn_inputs = keras.layers.Input(shape=(size, size, 18+symmetric))
+    cnn = keras.layers.Lambda(lambda x: x[..., 0:1+symmetric])(cnn_inputs)
 
     for i in range(nlayers):
         for _ in range(nconv):
@@ -324,12 +327,12 @@ def _global_model(nfilters, nconv, nlayers, learning_rate, size, default_pred):
 
     cnn = keras.layers.core.Reshape((size * size, -1))(cnn)
     cnn = keras.layers.core.Permute((2, 1))(cnn)
-    body_zones = keras.layers.Lambda(lambda x: x[..., 1:])(cnn_inputs)
+    body_zones = keras.layers.Lambda(lambda x: x[..., 1+symmetric:])(cnn_inputs)
     body_zones = keras.layers.core.Reshape((size * size, -1))(body_zones)
     zone_features = keras.layers.core.Lambda(lambda x: K.batch_dot(x[0], x[1]))([cnn, body_zones])
     image_model = keras.models.Model(cnn_inputs, zone_features)
 
-    inputs = keras.layers.Input(shape=(4, size, size, 18))
+    inputs = keras.layers.Input(shape=(4, size, size, 18+symmetric))
     all_zone_features = keras.layers.wrappers.TimeDistributed(image_model)(inputs)
     all_zone_features = keras.layers.core.Reshape((-1, 17))(all_zone_features)
     all_zone_features = keras.layers.core.Permute((2, 1))(all_zone_features)
@@ -346,7 +349,7 @@ def _global_model(nfilters, nconv, nlayers, learning_rate, size, default_pred):
 
 
 @cached(get_augmented_global_image_train_data, version=3)
-def train_global_2d_cnn_model(mode):
+def train_global_2d_cnn_model(mode, symmetric):
     assert mode in ('train', 'sample_train')
 
     batch_size = 32
@@ -361,10 +364,10 @@ def train_global_2d_cnn_model(mode):
         else:
             epochs = 10
 
-        x_train, y_train = get_augmented_global_image_train_data(train, image_size)
-        x_valid, y_valid = get_augmented_global_image_train_data(valid, image_size)
+        x_train, y_train = get_augmented_global_image_train_data(train, image_size, symmetric)
+        x_valid, y_valid = get_augmented_global_image_train_data(valid, image_size, symmetric)
         y_train, y_valid = y_train[()], y_valid[()]
-        model = _global_model(8, 2, 4, 1e-4, image_size, np.mean(y_train))
+        model = _global_model(8, 2, 4, 1e-4, image_size, np.mean(y_train), symmetric)
 
         for epoch in tqdm.trange(epochs, desc='epochs'):
             chunk_size = int(10e9) // x_train[0, ...].nbytes

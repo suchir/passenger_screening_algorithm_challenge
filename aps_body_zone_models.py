@@ -188,7 +188,7 @@ def get_global_image_masks():
     return masks
 
 
-def _get_images_and_masks(data, masks, size):
+def _get_images_and_masks(data, masks, size, symmetric):
     images = []
     for i in range(4):
         image = np.rot90(data[:, :, 4*i])
@@ -196,17 +196,25 @@ def _get_images_and_masks(data, masks, size):
             image = np.fliplr(image)
         image = np.concatenate([image[:, :, np.newaxis], masks[i]], axis=2)
         images.append(skimage.transform.resize(image, (size, size)))
-    return np.stack(images)
+    images = np.stack(images)
+    if symmetric:
+        images = np.concatenate([np.stack([
+            np.fliplr(images[0, :, :, 0:1]),
+            images[3, :, :, 0:1],
+            np.fliplr(images[2, :, :, 0:1]),
+            images[1, :, :, 0:1]
+        ]), images], axis=3)
+    return images
 
 
 @cached(dataio.get_train_data_generator, version=0)
-def get_global_image_train_data(mode, size):
+def get_global_image_train_data(mode, size, symmetric):
     if not os.path.exists('done'):
         labels = dataio.get_train_labels()
         masks = get_global_image_masks()
         x, y = [], []
         for file, data in dataio.get_train_data_generator(mode, 'aps')():
-            x.append(_get_images_and_masks(data, masks, size))
+            x.append(_get_images_and_masks(data, masks, size, symmetric))
             y.append(np.array(labels[file]))
 
         x, y = np.stack(x), np.stack(y)
