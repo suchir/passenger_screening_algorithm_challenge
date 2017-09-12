@@ -5,10 +5,12 @@ import matplotlib.pyplot as plt
 import dataio
 import hand_labeling
 import aps_body_zone_models
+import aps_image_models
 import pyevtk
 import os
 import matplotlib.animation
 import skimage.io
+import skimage.transform
 
 
 @cached(dataio.get_all_data_generator, version=2)
@@ -65,3 +67,27 @@ def view_symmetric_body_parts(mode):
         image = np.zeros((256, 256, 3))
         image[:, :, 0:2] = x[i]
         skimage.io.imsave('%s_%s_%s.png' % (i//17 + 1, i%17 + 1, y[i][0] + y[i][1]), image)
+
+
+@cached(aps_image_models.get_augmented_global_image_train_data, version=0)
+def view_augmented_global_image_train_data(mode, image_size):
+    x_aug, y_train = aps_image_models.get_augmented_global_image_train_data(mode, image_size, False)
+    x_train, _ = aps_body_zone_models.get_global_image_train_data(mode, 256, False)
+    for i, (x0, x1, y) in enumerate(zip(x_aug, x_train, y_train)):
+        x = (x0, x1)
+        for real in range(2):
+            image = np.concatenate([
+                np.concatenate([
+                    x[real][0, ..., 0],
+                    x[real][1, ..., 0]
+                ], axis=1),
+                np.concatenate([
+                    x[real][2, ..., 0],
+                    x[real][3, ..., 0]
+                ], axis=1)
+            ], axis=0)
+            image -= np.min(image)
+            image /= np.max(image)
+            image = skimage.transform.resize(image, (512, 512))
+            answer = ','.join([str(i+1) for i in range(17) if y[i]])
+            skimage.io.imsave('%s_%s_%s.png' % (i, answer, real), image)
