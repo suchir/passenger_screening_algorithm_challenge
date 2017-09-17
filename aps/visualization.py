@@ -1,4 +1,4 @@
-from caching import read_input_dir, cached
+from common.caching import read_input_dir, cached
 
 from . import dataio
 from . import hand_labeling

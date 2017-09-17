@@ -126,7 +126,7 @@ def _get_body_part_partitions(image, rows, cols):
 def get_naive_partitioned_body_part_train_data(mode):
     if not os.path.exists('done'):
         labels = dataio.get_train_labels()
-        rows, cols = get_naive_body_part_labels('all')
+        rows, cols = get_naive_body_part_labels(mode)
         x, y = [], []
         for file, data in dataio.get_train_data_generator(mode, 'aps')():
             images = _get_body_part_partitions(data, rows, cols)
@@ -236,7 +236,7 @@ def get_global_image_test_data(mode, size):
 
         files, x = [], []
         for file, data in dataio.get_test_data_generator(mode, 'aps')():
-            x.append(_get_images_and_masks(data, masks, size))
+            x.append(_get_images_and_masks(data, masks, size, False))
             files.append(file)
 
         x = np.stack(x)

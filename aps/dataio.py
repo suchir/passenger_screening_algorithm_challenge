@@ -136,7 +136,7 @@ def read_data(infile):
 
 
 def get_train_labels():
-    with read_input_dir('data'):
+    with read_input_dir('competition_data'):
         lines = open('stage1_labels.csv').readlines()[1:]
 
     ret = {}
@@ -160,7 +160,7 @@ def get_train_headers(filetype):
         with open('headers.pickle', 'rb') as f:
             return pickle.load(f)
     else:
-        with read_input_dir('data/%s' % filetype):
+        with read_input_dir('competition_data/%s' % filetype):
             headers = {file.split('.')[0]: read_header(file) for file in glob.glob('*')}
         with open('headers.pickle', 'wb') as f:
             pickle.dump(headers, f)
@@ -170,7 +170,7 @@ def get_train_headers(filetype):
 def _get_data_generator(filetype, keep):
     assert filetype in ('a3d', 'aps')
 
-    loc = 'data/%s' % filetype
+    loc = 'competition_data/%s' % filetype
 
     with read_input_dir(loc):
         files = sorted(glob.glob('*'))

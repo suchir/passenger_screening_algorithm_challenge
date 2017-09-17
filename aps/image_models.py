@@ -276,7 +276,8 @@ def get_augmented_global_image_test_data(mode, size):
         batch_size = 32
 
         for i in tqdm.trange(num_dsets):
-            for j, (xb, _) in enumerate(_augment_data_generator(x_in, np.zeros(batch_size), batch_size)):
+            for j, (xb, _) in enumerate(_augment_data_generator(x_in, np.zeros(batch_size),
+                                                                batch_size, False)):
                 st = i*len(x_in) + j*batch_size
                 x[st:st+len(xb)] = xb
 
@@ -294,15 +295,16 @@ def get_augmented_global_image_test_data(mode, size):
 
 class SplitDenseLayer(keras.engine.topology.Layer):
     def __init__(self, default_pred, **kwargs):
-        self.default_bias = np.log(default_pred / (1 - default_pred))
-        super().__init__(**kwargs)
+        self.default_pred = default_pred
+        super(SplitDenseLayer, self).__init__(**kwargs)
 
     def build(self, input_shape):
         self.kernel = self.add_weight(name='kernel', shape=(1,)+input_shape[1:],
                                       initializer=keras.initializers.Zeros(),
                                       trainable=True)
+        default_bias = np.log(self.default_pred / (1 - self.default_pred))
         self.bias = self.add_weight(name='bias', shape=(1, input_shape[1]),
-                                    initializer=keras.initializers.Constant(self.default_bias),
+                                    initializer=keras.initializers.Constant(default_bias),
                                     trainable=True)
         super(SplitDenseLayer, self).build(input_shape)
 
@@ -311,6 +313,13 @@ class SplitDenseLayer(keras.engine.topology.Layer):
 
     def compute_output_shape(self, input_shape):
         return input_shape[:-1]
+
+    def get_config(self):
+        return {'default_pred': self.default_pred}
+
+    @classmethod
+    def from_config(cls, config):
+        return cls(config['default_pred'])
 
 
 def _global_cnn(nfilters, nconv, nlayers, image_size, symmetric):
@@ -348,7 +357,7 @@ def _global_model(nfilters, nconv, nlayers, image_size, default_pred, symmetric)
 
     cnn = _global_cnn(nfilters, nconv, nlayers, image_size, symmetric)
 
-    inputs = keras.layers.Input(shape=(4, size, size, 18+symmetric))
+    inputs = keras.layers.Input(shape=(4, image_size, image_size, 18+symmetric))
     all_zone_features = keras.layers.wrappers.TimeDistributed(cnn)(inputs)
     all_zone_features = keras.layers.core.Reshape((-1, 17))(all_zone_features)
     all_zone_features = keras.layers.core.Permute((2, 1))(all_zone_features)
@@ -479,7 +488,7 @@ def get_global_2d_cnn_test_predictions(mode):
     assert mode in ('test', 'sample_test')
 
     if not os.path.exists('ret.pickle'):
-        model = train_global_2d_cnn_model('train' if mode == 'test' else 'sample_train')
+        model = train_global_2d_cnn_model('train' if mode == 'test' else 'sample_train', 128, False)
         x, files = get_augmented_global_image_test_data(mode, 128)
 
         y = model.predict(x, batch_size=32)
