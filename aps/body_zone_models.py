@@ -1,8 +1,9 @@
-from caching import cached, read_input_dir
+from common.caching import cached, read_input_dir
+
+from . import dataio
+from . import hand_labeling
 
 import numpy as np
-import dataio
-import hand_labeling
 import skimage.io
 import skimage.transform
 import os

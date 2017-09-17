@@ -1,9 +1,11 @@
-from caching import cached, read_input_dir
+from common.caching import cached, read_input_dir
+
+from . import dataio
+from . import body_zone_models
+
 from keras import backend as K
 
 import numpy as np
-import dataio
-import aps_body_zone_models
 import keras
 import tqdm
 import os
@@ -13,12 +15,12 @@ import h5py
 import time
 
 
-@cached(aps_body_zone_models.get_naive_partitioned_body_part_train_data, version=2)
+@cached(body_zone_models.get_naive_partitioned_body_part_train_data, version=2)
 def get_resnet50_cnn_codes(mode):
     if not os.path.exists('done'):
         model = keras.applications.ResNet50(include_top=False, input_shape=(256, 256, 3),
                                             pooling='avg')
-        x, y = aps_body_zone_models.get_naive_partitioned_body_part_train_data(mode)
+        x, y = body_zone_models.get_naive_partitioned_body_part_train_data(mode)
 
         codes = []
         for i in tqdm.tqdm(range(0, len(x), 32)):
@@ -54,7 +56,7 @@ def _simple_model(init_filters, depth, learning_rate, image_size):
 
 
 
-@cached(aps_body_zone_models.get_naive_partitioned_body_part_train_data, version=0)
+@cached(body_zone_models.get_naive_partitioned_body_part_train_data, version=0)
 def localized_2d_cnn_hyperparameter_search(mode):
     assert mode in ('train', 'sample_train')
 
@@ -63,8 +65,8 @@ def localized_2d_cnn_hyperparameter_search(mode):
         train = 'train' if mode == 'train' else 'sample_train'
         valid = 'valid' if mode == 'train' else 'sample_valid'
 
-        x_train, y_train = aps_body_zone_models.get_naive_partitioned_body_part_train_data(train)
-        x_valid, y_valid = aps_body_zone_models.get_naive_partitioned_body_part_train_data(valid)
+        x_train, y_train = body_zone_models.get_naive_partitioned_body_part_train_data(train)
+        x_valid, y_valid = body_zone_models.get_naive_partitioned_body_part_train_data(valid)
         train_gen = get_oversampled_data_generator(x_train, y_train, 32, 0.5)
         valid_gen = get_oversampled_data_generator(x_valid, y_valid, 32, 0.5)
 
@@ -102,7 +104,7 @@ def localized_2d_cnn_hyperparameter_search(mode):
     return best_model
 
 
-@cached(aps_body_zone_models.get_naive_partitioned_body_part_train_data, version=1)
+@cached(body_zone_models.get_naive_partitioned_body_part_train_data, version=1)
 def train_local_2d_cnn_model(mode):
     assert mode in ('train', 'sample_train')
 
@@ -133,8 +135,8 @@ def train_local_2d_cnn_model(mode):
         else:
             steps_per_epoch, epochs = 10, 3
 
-        x_train, y_train = aps_body_zone_models.get_naive_partitioned_body_part_train_data(train)
-        x_valid, y_valid = aps_body_zone_models.get_naive_partitioned_body_part_train_data(valid)
+        x_train, y_train = body_zone_models.get_naive_partitioned_body_part_train_data(train)
+        x_valid, y_valid = body_zone_models.get_naive_partitioned_body_part_train_data(valid)
         train_gen = get_oversampled_data_generator(x_train, y_train, batch_size,
                                                    steps_per_epoch * epochs, 0.5)
         valid_gen = get_oversampled_data_generator(x_valid, y_valid, batch_size, 1)
@@ -190,14 +192,14 @@ def get_oversampled_data_generator(x, y, batch_size, steps, proportion_true=None
         i += 1
 
 
-@cached(aps_body_zone_models.get_naive_partitioned_body_part_test_data, train_local_2d_cnn_model,
+@cached(body_zone_models.get_naive_partitioned_body_part_test_data, train_local_2d_cnn_model,
         version=1)
 def get_local_2d_cnn_test_predictions(mode):
     assert mode in ('test', 'sample_test')
 
     if not os.path.exists('ret.pickle'):
         predictor = train_local_2d_cnn_model('train' if mode == 'test' else 'sample_train')
-        data = aps_body_zone_models.get_naive_partitioned_body_part_test_data(mode)
+        data = body_zone_models.get_naive_partitioned_body_part_test_data(mode)
         ret = {}
 
         for label, images in tqdm.tqdm(data.items()):
@@ -239,10 +241,10 @@ def _augment_data_generator(x, y, batch_size, symmetric):
         yield batch, y[i:i+batch_size]
 
 
-@cached(aps_body_zone_models.get_global_image_train_data, version=2)
+@cached(body_zone_models.get_global_image_train_data, version=2)
 def get_augmented_global_image_train_data(mode, size, symmetric):
     if not os.path.exists('done'):
-        x_in, y_in = aps_body_zone_models.get_global_image_train_data(mode, size, symmetric)
+        x_in, y_in = body_zone_models.get_global_image_train_data(mode, size, symmetric)
         num_dsets = 5 if mode.startswith('sample') else 50
         f = h5py.File('data.hdf5', 'w')
         x = f.create_dataset('x', (num_dsets*len(x_in),) + x_in.shape[1:])
@@ -264,10 +266,10 @@ def get_augmented_global_image_train_data(mode, size, symmetric):
     return x, y
 
 
-@cached(aps_body_zone_models.get_global_image_test_data, version=1)
+@cached(body_zone_models.get_global_image_test_data, version=1)
 def get_augmented_global_image_test_data(mode, size):
     if not os.path.exists('done'):
-        x_in, files = aps_body_zone_models.get_global_image_test_data(mode, size)
+        x_in, files = body_zone_models.get_global_image_test_data(mode, size)
         num_dsets = 5 if mode.startswith('sample') else 50
         f = h5py.File('data.hdf5', 'w')
         x = f.create_dataset('x', (num_dsets*len(x_in),) + x_in.shape[1:])

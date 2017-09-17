@@ -1,11 +1,12 @@
 from caching import read_input_dir, cached
 
+from . import dataio
+from . import hand_labeling
+from . import body_zone_models
+from . import image_models
+
 import numpy as np
 import matplotlib.pyplot as plt
-import dataio
-import hand_labeling
-import aps_body_zone_models
-import aps_image_models
 import pyevtk
 import os
 import matplotlib.animation
@@ -59,9 +60,9 @@ def plot_zone_boundary_distributions(mode):
     plt.savefig('boundaries.png')
 
 
-@cached(aps_body_zone_models.get_naive_partitioned_symmetric_body_part_train_data, version=0)
+@cached(body_zone_models.get_naive_partitioned_symmetric_body_part_train_data, version=0)
 def view_symmetric_body_parts(mode):
-    x, y = aps_body_zone_models.get_naive_partitioned_symmetric_body_part_train_data(mode)
+    x, y = body_zone_models.get_naive_partitioned_symmetric_body_part_train_data(mode)
 
     for i in range(len(x)):
         image = np.zeros((256, 256, 3))
@@ -69,10 +70,10 @@ def view_symmetric_body_parts(mode):
         skimage.io.imsave('%s_%s_%s.png' % (i//17 + 1, i%17 + 1, y[i][0] + y[i][1]), image)
 
 
-@cached(aps_image_models.get_augmented_global_image_train_data, version=0)
+@cached(image_models.get_augmented_global_image_train_data, version=0)
 def view_augmented_global_image_train_data(mode, image_size):
-    x_aug, y_train = aps_image_models.get_augmented_global_image_train_data(mode, image_size, False)
-    x_train, _ = aps_body_zone_models.get_global_image_train_data(mode, 256, False)
+    x_aug, y_train = image_models.get_augmented_global_image_train_data(mode, image_size, False)
+    x_train, _ = body_zone_models.get_global_image_train_data(mode, 256, False)
     for i, (x0, x1, y) in enumerate(zip(x_aug, x_train, y_train)):
         x = (x0, x1)
         for real in range(2):
