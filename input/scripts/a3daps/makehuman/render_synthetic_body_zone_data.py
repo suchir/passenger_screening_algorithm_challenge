@@ -2,10 +2,12 @@ import bpy
 import os
 import math
 import random
+import json
 
 
-def get_filepaths():
-    return open('filepaths.txt', 'r').read().split()
+def get_config():
+    with open('config.json', 'r') as f:
+        return json.load(f)
 
 
 def init_renderer():
@@ -95,13 +97,12 @@ def apply_colors():
     body.data.materials[0] = bpy.data.materials.get('Colors')
 
 
-def render_body(filename, mode):
+def render_body(filename, mode, num_angles):
     body = bpy.data.objects['body']
     render = bpy.data.scenes['Scene'].render
 
-    n = 64
-    for i in range(n):
-        body.rotation_euler = (0, 0, 2*math.pi/n*i)
+    for i in range(num_angles):
+        body.rotation_euler = (0, 0, 2*math.pi/num_angles*i)
         render.filepath = os.getcwd() + '/%s_%s_%s.png' % (filename, i, mode)
         bpy.ops.render.render(write_still=True)
 
@@ -111,19 +112,17 @@ def delete_mesh():
     bpy.ops.object.delete()
 
 
+cfg = get_config()
+
 init_renderer()
 init_scene()
+create_materials(cfg['texture_path'])
 
-files = get_filepaths()
-texture_path, mesh_paths = files[0], files[1:]
-
-create_materials(texture_path)
-
-for i, path in enumerate(mesh_paths):
+for i, path in enumerate(cfg['mesh_paths']):
     filename = path.split('/')[-1].split('.')[0]
     import_mesh(path)
     apply_metal()
-    render_body(filename, 'metal')
+    render_body(filename, 'metal', cfg['num_angles'])
     apply_colors()
-    render_body(filename, 'color')
+    render_body(filename, 'color', cfg['num_angles'])
     delete_mesh()
