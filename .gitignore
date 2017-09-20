@@ -1,4 +1,7 @@
-input
+input/static
+input/makehuman
+input/hand_labeling
+input/competition_data
 cache
 temp
 __pycache__
