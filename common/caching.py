@@ -1,5 +1,7 @@
 import contextlib
 import os
+import datetime
+import time
 
 
 ROOT_DIR = os.getcwd()
@@ -56,10 +58,12 @@ class CachedFunction(object):
 
         print('%s|-> executing %s ' % (indent, called))
         _fn_stack.append(self)
+        t0 = time.time()
         with change_directory('%s/%s/%s/%s' % (loc, self._fn.__name__, self.version, dirname)):
             ret = self._fn(*args, **kwargs)
+        delta = datetime.timedelta(seconds=time.time()-t0)
         _fn_stack.pop()
-        print('%s|-> completed %s' % (indent, called))
+        print('%s|-> completed %s [%s]' % (indent, called, str(delta)))
 
         return ret
 

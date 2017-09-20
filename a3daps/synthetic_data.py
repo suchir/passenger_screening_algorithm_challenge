@@ -44,6 +44,7 @@ def _convert_colors_to_label(image):
     ret[dist > tol] = 0
     return ret
 
+
 @cached(version=4)
 def render_synthetic_body_zone_data(mode):
     assert mode in ('sample', 'all', 'sample_train', 'train', 'sample_valid', 'valid')
