@@ -27,7 +27,7 @@ _cached_fns = set()
 
 def _strargs(*args, **kwargs):
     ret = [repr(x) for x in args]
-    ret += sorted(['%s=%s' % (repr(k), repr(v)) for k, v in kwargs.items()].sort())
+    ret += sorted(['%s=%s' % (repr(k), repr(v)) for k, v in kwargs.items()])
     return ', '.join(ret)
 
 
