@@ -19,15 +19,15 @@ def init_renderer():
     bpy.data.scenes['Scene'].cycles.samples = 8
 
 
-def init_scene():
-    bpy.data.objects['Camera'].location = (0, -2.5, 1)
-    bpy.data.objects['Camera'].rotation_euler = (math.pi/2, 0, 0)
+def move_camera(angle):
+    bpy.data.objects['Camera'].location = (1.8*math.sin(angle), -1.8*math.cos(angle), 0.8)
+    bpy.data.objects['Camera'].rotation_euler = (math.pi/2, 0, angle)
+    bpy.data.objects['Lamp'].rotation_euler = (math.pi/2, 0, angle)
 
+
+def init_scene():
     lamp = bpy.data.lamps['Lamp']
     lamp.type = 'SUN'
-    lamp.use_nodes = True
-    lamp.node_tree.nodes['Emission'].inputs[1].default_value = 0.25
-    bpy.data.objects['Lamp'].rotation_euler = (math.pi/2, 0, 0)
 
     bpy.data.worlds['World'].horizon_color = (0, 0, 0)
 
@@ -36,12 +36,13 @@ def init_scene():
 
 
 def create_materials(texture_path):
-    metal = bpy.data.materials.new(name='Metal')
-    metal.use_nodes = True
-    bsdf = metal.node_tree.nodes.new('ShaderNodeBsdfPrincipled')
-    bsdf.inputs['Metallic'].default_value = 1.0
-    metal_output = metal.node_tree.nodes.get('Material Output')
-    metal.node_tree.links.new(metal_output.inputs[0], bsdf.outputs[0])
+    skin = bpy.data.materials.new(name='Skin')
+    skin.use_nodes = True
+    bsdf = skin.node_tree.nodes.new('ShaderNodeBsdfDiffuse')
+    bsdf.inputs[0].default_value = (0.3, 0.3, 0.3, 1)
+    bsdf.inputs[1].default_value = 1.0
+    skin_output = skin.node_tree.nodes.get('Material Output')
+    skin.node_tree.links.new(skin_output.inputs[0], bsdf.outputs[0])
 
     colors = bpy.data.materials.new(name='Colors')
     colors.use_nodes = True
@@ -54,6 +55,28 @@ def create_materials(texture_path):
     colors.node_tree.links.new(emission.inputs[0], texture.outputs[0])
 
 
+def get_poses():
+    def noisy(pos, amt):
+        pos = list(pos)
+        for i, x in enumerate(pos):
+            pos[i] = pos[i] + random.uniform(-amt, amt)
+        return tuple(pos)
+
+    bones = bpy.data.objects['mesh'].pose.bones
+    ret = {}
+    for bone in bones:
+        # amt = 0.25 if any(bone.name.startswith(x) for x in ('clavicle', 'upperarm', 'lowerarm')) \
+        #       else 0.1
+        ret[bone.name] = noisy(bone.rotation_quaternion, 0.1)
+    return ret
+
+
+def apply_pose(pose):
+    bones = bpy.data.objects['mesh'].pose.bones
+    for bone in pose:
+        bones[bone].rotation_quaternion = pose[bone]
+
+
 def import_mesh(filepath):
     bpy.ops.import_scene.makehuman_mhx2(filepath=filepath)
 
@@ -64,32 +87,22 @@ def import_mesh(filepath):
     bpy.data.objects['%s:High-poly' % name].name = 'eyes'
 
     bones = bpy.data.objects['mesh'].pose.bones
-    body = bpy.data.objects['body']
+    bones['clavicle_l'].rotation_quaternion = (1, 0, 0, 0.2)
+    bones['upperarm_l'].rotation_quaternion = (0.7, 0.5, -0.3, 0.3)
+    bones['lowerarm_l'].rotation_quaternion = (1, 0.3, 0, 0)
+    bones['clavicle_r'].rotation_quaternion = (1, 0, 0, -0.2)
+    bones['upperarm_r'].rotation_quaternion = (0.7, 0.5, 0.3, -0.3)
+    bones['lowerarm_r'].rotation_quaternion = (1, 0.3, 0, 0)
 
-    def noisy(*pos):
-        pos = list(pos)
-        for i, x in enumerate(pos):
-            pos[i] = pos[i] + random.uniform(-0.1, 0.1)
-        return tuple(pos)
-
-    bones['clavicle_l'].rotation_quaternion = noisy(1, 0, 0, 0.2)
-    bones['upperarm_l'].rotation_quaternion = noisy(0.8, 0, -0.2, 0.4)
-    bones['lowerarm_l'].rotation_quaternion = noisy(0.8, 0.5, -0.2, 0.3)
-    bones['clavicle_r'].rotation_quaternion = noisy(1, 0, 0, -0.2)
-    bones['upperarm_r'].rotation_quaternion = noisy(0.8, 0, 0.2, -0.4)
-    bones['lowerarm_r'].rotation_quaternion = noisy(0.8, 0.5, 0.2, -0.3)
-    bpy.context.scene.objects.active = body
-    bpy.ops.object.modifier_apply(modifier='ARMATURE')
-    bpy.data.objects['mesh'].select = True
+    bpy.context.scene.objects.active = bpy.data.objects['body']
     bpy.data.objects['eyes'].select = True
     bpy.ops.object.delete()
 
-    body.lock_rotation = (True, True, False)
 
 
-def apply_metal():
+def apply_skin():
     body = bpy.data.objects['body']
-    body.data.materials[0] = bpy.data.materials.get('Metal')
+    body.data.materials[0] = bpy.data.materials.get('Skin')
 
 
 def apply_colors():
@@ -97,18 +110,19 @@ def apply_colors():
     body.data.materials[0] = bpy.data.materials.get('Colors')
 
 
-def render_body(filename, mode, num_angles):
-    body = bpy.data.objects['body']
+def render_body(poses, filename, mode, num_angles):
     render = bpy.data.scenes['Scene'].render
 
     for i in range(num_angles):
-        body.rotation_euler = (0, 0, 2*math.pi/num_angles*i)
+        apply_pose(poses[i])
+        move_camera(2*math.pi/num_angles*i)
         render.filepath = os.getcwd() + '/%s_%s_%s.png' % (filename, i, mode)
         bpy.ops.render.render(write_still=True)
 
 
 def delete_mesh():
     bpy.data.objects['body'].select = True
+    bpy.data.objects['mesh'].select = True
     bpy.ops.object.delete()
 
 
@@ -121,8 +135,9 @@ create_materials(cfg['texture_path'])
 for i, path in enumerate(cfg['mesh_paths']):
     filename = path.split('/')[-1].split('.')[0]
     import_mesh(path)
-    apply_metal()
-    render_body(filename, 'metal', cfg['num_angles'])
+    poses = [get_poses() for _ in range(cfg['num_angles'])]
+    apply_skin()
+    render_body(poses, filename, 'skin', cfg['num_angles'])
     apply_colors()
-    render_body(filename, 'color', cfg['num_angles'])
+    render_body(poses, filename, 'color', cfg['num_angles'])
     delete_mesh()
