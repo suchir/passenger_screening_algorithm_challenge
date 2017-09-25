@@ -1,6 +1,8 @@
 from common.caching import read_input_dir
 
 import numpy as np
+import os
+
 
 def read_header(infile):
     """Read image header (first 512 bytes)
