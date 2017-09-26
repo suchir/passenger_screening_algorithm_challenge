@@ -19,31 +19,32 @@ import itertools
 import skimage.transform
 
 
-def _convert_colors_to_label(image):
-    colors = np.array([
-        [0, 0, 0],
-        [255, 115, 35],
-        [55, 64, 197],
-        [32, 168, 67],
-        [116, 116, 116],
-        [255, 193, 17],
-        [255, 164, 194],
-        [172, 226, 28],
-        [193, 183, 227],
-        [142, 212, 231],
-        [255, 240, 3],
-        [234, 25, 33],
-        [176, 110, 77],
-        [232, 219, 164],
-        [101, 135, 182],
-        [255, 3, 255],
-        [125, 0, 21],
-        [153, 64, 154]
-    ]) / 255.0
-    tol = 0.1
+BODY_ZONE_COLORS = np.array([
+    [0, 0, 0],
+    [255, 115, 35],
+    [55, 64, 197],
+    [32, 168, 67],
+    [116, 116, 116],
+    [255, 193, 17],
+    [255, 164, 194],
+    [172, 226, 28],
+    [193, 183, 227],
+    [142, 212, 231],
+    [255, 240, 3],
+    [234, 25, 33],
+    [176, 110, 77],
+    [232, 219, 164],
+    [101, 135, 182],
+    [255, 3, 255],
+    [125, 0, 21],
+    [153, 64, 154]
+]) / 255.0
 
+
+def _convert_colors_to_label(image):
+    tol = 0.1
     highlight = lambda color: np.sum(np.abs(image[..., 0:3]-color), axis=-1)
-    dist = np.stack([highlight(color) for color in colors], axis=-1)
+    dist = np.stack([highlight(color) for color in BODY_ZONE_COLORS], axis=-1)
     dist, ret = np.min(dist, axis=-1), np.argmin(dist, axis=-1)
     ret[dist > tol] = 0
     return ret
@@ -87,7 +88,7 @@ def render_synthetic_body_zone_data(mode):
     if not os.path.exists('done'):
         f = h5py.File('data.hdf5', 'w')
         x = f.create_dataset('x', (num_angles*len(mesh_paths), 2, image_size, image_size))
-        y = np.zeros(num_angles*len(mesh_paths), dtype='int32')
+        angles = np.zeros(num_angles*len(mesh_paths), dtype='int32')
 
         for i, file in enumerate(tqdm.tqdm(glob.glob('*_skin.png'))):
             color_file = file.replace('skin', 'color')
@@ -98,15 +99,15 @@ def render_synthetic_body_zone_data(mode):
             labels = _convert_colors_to_label(color[..., 0:3])
             x[i, 0, ...] = image
             x[i, 1, ...] = labels
-            y[i] = int(file.split('_')[1])
+            angles[i] = int(file.split('_')[1])
 
-        np.save('y.npy', y)
+        np.save('y.npy', angles)
         open('done', 'w').close()
     else:
         f = h5py.File('data.hdf5', 'r')
         x = f['x']
-        y = np.load('y.npy')
-    return x, y
+        angles = np.load('y.npy')
+    return x, angles
 
 
 @cached(render_synthetic_body_zone_data, version=0)
