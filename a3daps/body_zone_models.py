@@ -11,6 +11,7 @@ import numpy as np
 import skimage.transform
 import tqdm
 import os
+import h5py
 
 
 @cached(synthetic_data.render_synthetic_body_zone_data, version=0)
@@ -94,3 +95,27 @@ def train_body_zone_segmenter(mode):
                 yield preds
 
     return predict_generator
+
+
+@cached(dataio.get_data_hdf5, train_body_zone_segmenter, version=1)
+def get_body_zone_heatmaps(mode):
+    output_size = 64
+    num_angles = 64
+
+    if not os.path.exists('done'):
+        _, x, _ = dataio.get_data_hdf5(mode)
+        z = np.zeros((len(x), num_angles, output_size, output_size), dtype='uint8')
+
+        def gen():
+            for images in x:
+                yield images, np.arange(num_angles)
+
+        predict_generator = train_body_zone_segmenter('all')
+        for i, preds in tqdm.tqdm(enumerate(predict_generator(gen())), total=len(x)):
+            z[i] = preds
+
+        np.save('z.npy', z)
+        open('done', 'w').close()
+    else:
+        z = np.load('z.npy')
+    return z
