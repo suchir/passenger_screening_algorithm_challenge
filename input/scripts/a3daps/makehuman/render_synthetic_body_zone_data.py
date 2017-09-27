@@ -99,7 +99,6 @@ def import_mesh(filepath):
     bpy.ops.object.delete()
 
 
-
 def apply_skin():
     body = bpy.data.objects['body']
     body.data.materials[0] = bpy.data.materials.get('Skin')
