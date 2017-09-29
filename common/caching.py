@@ -2,9 +2,14 @@ import contextlib
 import os
 import datetime
 import time
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
 
 ROOT_DIR = os.getcwd()
+
+
+_fn_stack = []
+_cached_fns = set()
 
 
 @contextlib.contextmanager
@@ -23,19 +28,20 @@ def read_input_dir(loc=''):
     return change_directory('input/%s' % loc)
 
 
-_fn_stack = []
-_cached_fns = set()
+def read_log_dir():
+    assert _fn_stack, "Can't read log dir outside of a cached function."
+    return change_directory('log/%s' % _fn_stack[-1][1])
 
 
 def _strargs(*args, **kwargs):
     ret = [repr(x) for x in args]
-    ret += sorted(['%s=%s' % (repr(k), repr(v)) for k, v in kwargs.items()])
+    ret += sorted(['%s=%s' % (k, repr(v)) for k, v in kwargs.items()])
     return ', '.join(ret)
 
 
 def _sanitize_dirname(name):
     banned = '~#%&*{}\\:<>?/|".'
-    return ''.join(x for x in name if x not in banned)
+    return ''.join(x for x in name if x not in banned) or '_'
 
 
 class CachedFunction(object):
@@ -54,12 +60,13 @@ class CachedFunction(object):
         dirname = _sanitize_dirname(strargs)
         indent = '| ' * len(_fn_stack)
         called = '%s(%s) v%s' % (self._fn.__name__, strargs, self.version)
-        loc = 'input/static' if self.static else 'cache'
+        root = 'static' if self.static else 'cache'
+        path = '%s/%s/%s' % (self._fn.__name__, self.version, dirname)
 
         print('%s|-> executing %s ' % (indent, called))
-        _fn_stack.append(self)
+        _fn_stack.append((self, path))
         t0 = time.time()
-        with change_directory('%s/%s/%s/%s' % (loc, self._fn.__name__, self.version, dirname)):
+        with change_directory('%s/%s' % (root, path)):
             ret = self._fn(*args, **kwargs)
         delta = datetime.timedelta(seconds=time.time()-t0)
         _fn_stack.pop()
