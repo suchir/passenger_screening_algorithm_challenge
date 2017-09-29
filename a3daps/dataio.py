@@ -1,5 +1,5 @@
 from common.caching import read_input_dir, cached
-from common.dataio import read_data, get_train_labels
+from common.dataio import read_data, get_train_labels, write_answer_csv
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -13,7 +13,7 @@ import pickle
 
 def get_data(mode):
     assert mode in ('sample', 'sample_large', 'all', 'sample_train', 'train', 'sample_valid',
-                    'valid')
+                    'valid', 'sample_test', 'test')
     with read_input_dir('competition_data/a3daps'):
         files = glob.glob('*.a3daps')
 
