@@ -1,5 +1,5 @@
 from common.caching import read_input_dir, cached
-from common.dataio import read_header, read_data, get_train_labels
+from common.dataio import read_header, read_data, get_train_labels, write_answer_csv
 
 import numpy as np
 import os
@@ -71,11 +71,3 @@ def get_test_data_generator(mode, filetype):
     labels = get_train_labels()
     keep = lambda i, x: x not in labels and (mode != 'sample_test' or i < 100)
     return _get_data_generator(filetype, keep)
-
-
-def write_answer_csv(ans_dict):
-    with open('ans.csv', 'w') as f:
-        f.write('Id,Probability\n')
-        for label, ret in ans_dict.items():
-            for i in range(17):
-                f.write('%s_Zone%s,%s\n' % (label, i+1, ret[i]))

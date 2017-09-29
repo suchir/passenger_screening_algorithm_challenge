@@ -147,3 +147,11 @@ def get_train_labels():
         ret[file][zone-1] = label
 
     return ret
+
+
+def write_answer_csv(ans_dict):
+    with open('ans.csv', 'w') as f:
+        f.write('Id,Probability\n')
+        for label, ret in ans_dict.items():
+            for i in range(17):
+                f.write('%s_Zone%s,%s\n' % (label, i+1, ret[i]))
