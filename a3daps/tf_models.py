@@ -43,7 +43,7 @@ def simple_cnn(x, num_features, num_conv, activation):
     return x
 
 
-def simple_multiview_cnn(images, zones, model, use_dense):
+def simple_multiview_cnn(images, zones, model, model_mode):
     image_size, num_angles = int(images.shape[-1]), int(images.shape[1])
 
     heatmaps = []
@@ -61,7 +61,12 @@ def simple_multiview_cnn(images, zones, model, use_dense):
     zone_features = tf.matmul(tf.transpose(zones_flat, [0, 1, 3, 2]), heatmaps_flat)
     pooled_features = tf.reduce_max(zone_features, axis=1)
 
-    if use_dense:
+    if model_mode == 'hybrid':
+        flat_features = tf.reshape(pooled_features, [-1, 17*num_features])
+        W = tf.get_variable('W', [17, num_features])
+        b = tf.get_variable('b', [17])
+        logits = tf.layers.dense(flat_features, 17) + tf.reduce_sum(pooled_features*W, axis=-1) + b
+    elif model_mode == 'dense':
         flat_features = tf.reshape(pooled_features, [-1, 17*num_features])
         logits = tf.layers.dense(flat_features, 17)
     else:
