@@ -45,7 +45,7 @@ def _sanitize_dirname(name):
 
 
 class CachedFunction(object):
-    def __init__(self, fn, version, static, *deps):
+    def __init__(self, fn, version, static, subdir, *deps):
         assert fn.__name__ not in _cached_fns, "Can't have two cached functions with the same name."
         _cached_fns.add(fn.__name__)
 
@@ -53,6 +53,7 @@ class CachedFunction(object):
         self.ancestors = set.union({self}, *(x.ancestors for x in deps))
         self.version = sum(x.version for x in self.ancestors)
         self.static = static
+        self.subdir = subdir
         self._fn = fn
 
     def __call__(self, *args, **kwargs):
@@ -62,6 +63,8 @@ class CachedFunction(object):
         called = '%s(%s) v%s' % (self._fn.__name__, strargs, self.version)
         root = 'static' if self.static else 'cache'
         path = '%s/%s/%s' % (self._fn.__name__, self.version, dirname)
+        if self.subdir:
+            path = '%s/%s' % (self.subdir, path)
 
         print('%s|-> executing %s ' % (indent, called))
         _fn_stack.append((self, path))
@@ -75,8 +78,8 @@ class CachedFunction(object):
         return ret
 
 
-def cached(*deps, version=0, static=False):
+def cached(*deps, version=0, static=False, subdir=None):
     def decorator(fn):
-        return CachedFunction(fn, version, static, *deps)
+        return CachedFunction(fn, version, static, subdir, *deps)
 
     return decorator

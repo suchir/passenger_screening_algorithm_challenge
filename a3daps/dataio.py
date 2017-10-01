@@ -56,7 +56,7 @@ def get_data(mode):
     return DataGenerator()
 
 
-@cached(version=3)
+@cached(version=3, subdir='ssd')
 def get_data_hdf5(mode):
     num_angles = 64
     image_size = 256
