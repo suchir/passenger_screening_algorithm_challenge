@@ -4,6 +4,7 @@ import numpy as np
 import os
 import glob
 import tqdm
+import h5py
 
 
 def read_header(infile):
@@ -178,6 +179,33 @@ def get_data(mode, dtype):
             return self.gen
 
     return DataGenerator()
+
+
+@cached(version=1, subdir='ssd')
+def get_aps_data_hdf5(mode):
+    if not os.path.exists('done'):
+        names = []
+        labels = []
+        f = h5py.File('data.hdf5', 'w')
+        gen = get_data(mode, 'aps')
+        x = f.create_dataset('x', (len(gen), 660, 512, 16))
+        for i, (name, label, data) in enumerate(gen):
+            names.append(name)
+            labels.append(label)
+            x[i] = np.rot90(data)
+
+        labels = np.stack(labels)
+        np.save('labels.npy', labels)
+        with open('names.txt', 'w') as f:
+            f.write('\n'.join(names))
+        open('done', 'w').close()
+    else:
+        f = h5py.File('data.hdf5', 'r')
+        x = f['x']
+        labels = np.load('labels.npy')
+        with open('names.txt') as f:
+            names = f.read().split('\n')
+    return names, labels, x
 
 
 def get_train_labels():
