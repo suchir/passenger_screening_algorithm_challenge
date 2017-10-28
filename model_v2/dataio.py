@@ -22,7 +22,7 @@ def get_threat_heatmaps(mode):
         f = h5py.File('data.hdf5', 'w')
         th = f.create_dataset('th', x.shape + (3,))
 
-        with read_input_dir('hand_labeling/threat_segmentation/v0'):
+        with read_input_dir('hand_labeling/threat_segmentation/base'):
             for i, (name, data) in tqdm.tqdm(enumerate(zip(names, x)), total=len(x)):
                 files = glob.glob(name + '*')
                 assert files, 'missing hand segmentation for %s' % name
