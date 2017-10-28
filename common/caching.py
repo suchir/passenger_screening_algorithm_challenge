@@ -2,11 +2,12 @@ import contextlib
 import os
 import datetime
 import time
+import subprocess
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
 
 ROOT_DIR = os.getcwd()
-
+REMOTE_ROOT_DIR = '/home/Suchir/passenger_screening_algorithm_challenge'
 
 _fn_stack = []
 _cached_fns = set()
@@ -30,7 +31,7 @@ def read_input_dir(loc=''):
 
 def read_log_dir():
     assert _fn_stack, "Can't read log dir outside of a cached function."
-    return change_directory('log/%s' % _fn_stack[-1][1])
+    return change_directory('log/%s' % _fn_stack[-1][1][6:])
 
 
 def _strargs(*args, **kwargs):
@@ -45,41 +46,53 @@ def _sanitize_dirname(name):
 
 
 class CachedFunction(object):
-    def __init__(self, fn, version, static, subdir, *deps):
+    def __init__(self, fn, version, subdir, *deps):
         assert fn.__name__ not in _cached_fns, "Can't have two cached functions with the same name."
         _cached_fns.add(fn.__name__)
 
         self.version = version
         self.ancestors = set.union({self}, *(x.ancestors for x in deps))
         self.version = sum(x.version for x in self.ancestors)
-        self.static = static
         self.subdir = subdir
         self._fn = fn
 
-    def __call__(self, *args, **kwargs):
-        strargs = _strargs(*args, **kwargs)
-        dirname = _sanitize_dirname(strargs)
-        indent = '| ' * len(_fn_stack)
-        called = '%s(%s) v%s' % (self._fn.__name__, strargs, self.version)
-        root = 'static' if self.static else 'cache'
+    def _path(self, *args, **kwargs):
+        dirname = _sanitize_dirname(_strargs(*args, **kwargs))
         path = '%s/%s/%s' % (self._fn.__name__, self.version, dirname)
         if self.subdir:
             path = '%s/%s' % (self.subdir, path)
+        path = 'cache/%s' % path
+        return path
 
+    def __call__(self, *args, **kwargs):
+        indent = '| ' * len(_fn_stack)
+        called = '%s(%s) v%s' % (self._fn.__name__, _strargs(*args, **kwargs), self.version)
         print('%s|-> executing %s ' % (indent, called))
-        _fn_stack.append((self, path))
         t0 = time.time()
-        with change_directory('%s/%s' % (root, path)):
+
+        path = self._path(*args, **kwargs)
+        _fn_stack.append((self, path))
+        with change_directory('cache/%s' % (root, path)):
             ret = self._fn(*args, **kwargs)
-        delta = datetime.timedelta(seconds=time.time()-t0)
         _fn_stack.pop()
+
+        delta = datetime.timedelta(seconds=time.time()-t0)
         print('%s|-> completed %s [%s]' % (indent, called, str(delta)))
 
         return ret
 
+    def sync_cache(self, box, *args, **kwargs):
+        path = self._path(*args, **kwargs)
+        assert not os.path.exists(path), 'cache already exists for %s' % path
+        os.makedirs(path)
 
-def cached(*deps, version=0, static=False, subdir=None):
+        remote_path = '%s:%s/%s/*' % (box, REMOTE_ROOT_DIR, path)
+        subprocess.check_call(['gcloud', 'compute', 'scp', '--recurse', remote_path, path],
+                              shell=True)
+
+
+def cached(*deps, version=0, subdir=None):
     def decorator(fn):
-        return CachedFunction(fn, version, static, subdir, *deps)
+        return CachedFunction(fn, version, subdir, *deps)
 
     return decorator
