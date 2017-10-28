@@ -181,7 +181,26 @@ def get_data(mode, dtype):
     return DataGenerator()
 
 
-@cached(version=1, subdir='ssd')
+@cached(version=1)
+def get_train_labels():
+    with read_input_dir('competition_data'):
+        lines = open('revised_stage1_labels.csv').readlines()[1:]
+
+    ret = {}
+    for line in lines:
+        file, label = line.split(',')
+        file, zone = file.split('_')
+        zone = int(zone.replace('Zone', ''))
+        label = int(label)
+
+        if file not in ret:
+            ret[file] = [0] * 17
+        ret[file][zone-1] = label
+
+    return ret
+
+
+@cached(get_train_labels, version=1, subdir='ssd')
 def get_aps_data_hdf5(mode):
     if not os.path.exists('done'):
         names = []
@@ -206,24 +225,6 @@ def get_aps_data_hdf5(mode):
         with open('names.txt') as f:
             names = f.read().split('\n')
     return names, labels, x
-
-
-def get_train_labels():
-    with read_input_dir('competition_data'):
-        lines = open('stage1_labels.csv').readlines()[1:]
-
-    ret = {}
-    for line in lines:
-        file, label = line.split(',')
-        file, zone = file.split('_')
-        zone = int(zone.replace('Zone', ''))
-        label = int(label)
-
-        if file not in ret:
-            ret[file] = [0] * 17
-        ret[file][zone-1] = label
-
-    return ret
 
 
 def write_answer_csv(ans_dict):
