@@ -7,6 +7,9 @@ import numpy as np
 import skimage.io
 import tqdm
 import imageio
+import sklearn.cluster
+import sklearn.decomposition
+import os
 
 
 @cached(get_aps_data_hdf5, version=1)
@@ -19,11 +22,11 @@ def write_aps_hand_labeling_images(mode):
 
 
 @cached(get_aps_data_hdf5, version=0)
-def write_aps_hand_labeling_revision(mode, version):
+def write_aps_hand_labeling_revision_v0(mode):
     names, _, x = get_aps_data_hdf5(mode)
     todo = {}
     with read_input_dir('hand_labeling/threat_segmentation'):
-        with open('revision_v%s.txt' % version, 'r') as f:
+        with open('revision_v0.txt', 'r') as f:
             for line in f:
                 name, labels = line[:5], line[6:]
                 assert name not in todo, "duplicate revision names"
@@ -46,3 +49,24 @@ def write_aps_hand_labeling_gifs(mode):
         frames = np.rollaxis(frames, 2, 0)
         filename = '_'.join([name] + [str(i+1) for i in range(17) if label[i]])
         imageio.mimsave('%s.gif' % filename, frames)
+
+
+@cached(get_aps_data_hdf5, version=0)
+def write_passenger_id_images(mode):
+    names, _, x = get_aps_data_hdf5(mode)
+    for name, data in tqdm.tqdm(zip(names, x), total=len(x)):
+        imageio.imsave('%s.png' % name, data[..., 0] / np.max(data[..., 0]))
+
+
+@cached(get_aps_data_hdf5, version=0)
+def naive_cluster_passengers(mode, n_clusters):
+    names, _, x = get_aps_data_hdf5(mode)
+    images = x[:, ::8, ::8, 0].reshape((len(x), -1))
+    reduced_data = sklearn.decomposition.PCA(n_components=128).fit_transform(images)
+    kmeans = sklearn.cluster.KMeans(n_clusters).fit(reduced_data)
+    clusters = kmeans.predict(reduced_data)
+
+    for i in range(n_clusters):
+        os.mkdir(str(i))
+    for name, cluster, data in tqdm.tqdm(zip(names, clusters, x), total=len(x)):
+        imageio.imsave('%s/%s.png' % (cluster, name), data[..., 0]/data[..., 0].max())
