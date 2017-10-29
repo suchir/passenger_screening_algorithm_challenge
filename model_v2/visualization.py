@@ -2,6 +2,7 @@ from common.caching import cached, read_input_dir
 from common.dataio import get_aps_data_hdf5
 
 from . import dataio
+from . import threat_segmentation_models
 
 import numpy as np
 import skimage.io
@@ -70,3 +71,19 @@ def naive_cluster_passengers(mode, n_clusters):
         os.mkdir(str(i))
     for name, cluster, data in tqdm.tqdm(zip(names, clusters, x), total=len(x)):
         imageio.imsave('%s/%s.png' % (cluster, name), data[..., 0]/data[..., 0].max())
+
+
+@cached(threat_segmentation_models.train_unet_cnn, version=0)
+def write_unet_predicted_heatmaps(mode, batch_size, learning_rate, duration):
+    predict = threat_segmentation_models.train_unet_cnn(mode, batch_size, learning_rate, duration)
+
+    valid_mode = mode.replace('train', 'valid')
+    names, _, dset_valid = dataio.get_data_and_threat_heatmaps(valid_mode)
+
+    for name, data, preds in zip(names, dset_valid, predict(dset_valid)):
+        for i in range(16):
+            image = data[..., i, 0]
+            image = np.concatenate([image, image], axis=-1) / np.max(image)
+            image = np.stack([np.zeros(image.shape), image, np.zeros(image.shape)], axis=-1)
+            image[:, 512:, 0] = preds[i, ...]
+            imageio.imsave('%s_%s.png' % (name, i), image)
