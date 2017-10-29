@@ -5,6 +5,7 @@ import os
 import glob
 import tqdm
 import h5py
+import pickle
 
 
 def read_header(infile):
@@ -135,9 +136,53 @@ def read_data(infile):
 
 
 @cached(version=0)
+def get_cv_splits(n_split):
+    if not os.path.exists('cv.pkl'):
+        n_id = 24
+        id_names = [None] * n_id
+        for i in range(n_id):
+            with read_input_dir('hand_labeling/passenger_id/%s' % i):
+                id_names[i] = [x.split('.')[0] for x in glob.glob('*')]
+
+        labels = get_train_labels()
+        id_labels = np.array([np.sum([labels[x] for x in id_names[i]], axis=0)
+                              for i in range(n_id)])
+        all_labels = np.sum(id_labels, axis=0)
+
+        np.random.seed(0)
+        bdist, bsplit = 0, None
+        for _ in range(10000):
+            split = np.random.randint(n_split, size=n_id)
+            freq = [sum(len(id_names[i]) for i in range(n_id) if split[i] == x) for x in range(n_split)]
+            if min(freq)/len(labels) < 0.15 or max(freq)/len(labels) > 0.25:
+                continue
+
+            split_labels = np.array([np.sum(id_labels[split == x], axis=0) for x in range(n_split)])
+            rem_labels = all_labels - split_labels
+            dist = [np.dot(split_labels[i]/np.linalg.norm(split_labels[i]),
+                           rem_labels[i]/np.linalg.norm(rem_labels[i])) for i in range(n_split)]
+            if min(dist) > bdist:
+                bdist = min(dist)
+                bsplit = split
+
+        cv = {}
+        for i in range(n_id):
+            for name in id_names[i]:
+                cv[name] = bsplit[i]
+
+        with open('cv.pkl', 'wb') as f:
+            pickle.dump(cv, f)
+    else:
+        with open('cv.pkl', 'rb') as f:
+            cv = pickle.load(f)
+    return cv
+
+
+@cached(version=0)
 def get_data(mode, dtype):
     assert mode in ('sample', 'sample_large', 'all', 'sample_train', 'train', 'sample_valid',
-                    'valid', 'sample_test', 'test')
+                    'valid', 'sample_test', 'test', 'train-0', 'train-1', 'train-2', 'train-3',
+                    'train-4', 'valid-0', 'valid-1', 'valid-2', 'valid-3', 'valid-4')
     assert dtype in ('aps', 'a3daps', 'a3d')
     with read_input_dir('competition_data/%s' % dtype):
         files = glob.glob('*')
@@ -152,6 +197,11 @@ def get_data(mode, dtype):
             files = files[100:]
         elif mode.endswith('valid'):
             files = files[:100]
+        else:
+            split = int(mode[-1])
+            cv = get_cv_splits(5)
+            in_valid = lambda file: cv[file.split('.')[0]]
+            files = [file for file in files if mode.startswith('valid') == in_valid(file)]
     if mode.startswith('sample'):
         if mode.endswith('large'):
             files = files[:100]
