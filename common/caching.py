@@ -72,7 +72,7 @@ class CachedFunction(object):
 
         path = self._path(*args, **kwargs)
         _fn_stack.append((self, path))
-        with change_directory('cache/%s' % (root, path)):
+        with change_directory(path):
             ret = self._fn(*args, **kwargs)
         _fn_stack.pop()
 
