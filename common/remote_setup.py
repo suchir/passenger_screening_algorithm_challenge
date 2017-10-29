@@ -10,8 +10,6 @@ def download_bucket(path, bucket):
 
 
 if __name__ == '__main__':
-    subprocess.check_call(['source', '/home/cs231n/myVE35/bin/activate'])
-
     inputs = set(sys.argv[1:])
     assert inputs <= {'aps', 'a3daps', 'a3d', 'hand_labeling'}, "unrecognized input"
 
