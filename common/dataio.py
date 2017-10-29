@@ -178,7 +178,7 @@ def get_cv_splits(n_split):
     return cv
 
 
-@cached(version=0)
+@cached(version=1)
 def get_data(mode, dtype):
     assert mode in ('sample', 'sample_large', 'all', 'sample_train', 'train', 'sample_valid',
                     'valid', 'sample_test', 'test', 'train-0', 'train-1', 'train-2', 'train-3',
@@ -200,7 +200,7 @@ def get_data(mode, dtype):
         else:
             split = int(mode[-1])
             cv = get_cv_splits(5)
-            in_valid = lambda file: cv[file.split('.')[0]]
+            in_valid = lambda file: cv[file.split('.')[0]] == split
             files = [file for file in files if mode.startswith('valid') == in_valid(file)]
     if mode.startswith('sample'):
         if mode.endswith('large'):
@@ -250,7 +250,7 @@ def get_train_labels():
     return ret
 
 
-@cached(get_train_labels, version=1, subdir='ssd')
+@cached(get_data, get_train_labels, version=1, subdir='ssd')
 def get_aps_data_hdf5(mode):
     if not os.path.exists('done'):
         names = []
