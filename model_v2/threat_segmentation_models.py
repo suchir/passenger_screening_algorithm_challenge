@@ -37,8 +37,11 @@ def train_unet_cnn(mode, batch_size, learning_rate, duration):
     model_path = os.getcwd() + '/model.ckpt'
 
     def feed(data):
+        image = data[..., 0]
+        image -= np.mean(image)
+        image /= np.std(image)
         return {
-            images: data[..., 0],
+            images: image,
             thmap: np.sum(data[..., 1:], axis=-1)
         }
 
