@@ -73,7 +73,7 @@ def naive_cluster_passengers(mode, n_clusters):
         imageio.imsave('%s/%s.png' % (cluster, name), data[..., 0]/data[..., 0].max())
 
 
-@cached(threat_segmentation_models.train_unet_cnn, version=0)
+@cached(threat_segmentation_models.train_unet_cnn, version=1)
 def write_unet_predicted_heatmaps(mode, batch_size, learning_rate, duration):
     predict = threat_segmentation_models.train_unet_cnn(mode, batch_size, learning_rate, duration)
 
@@ -83,7 +83,8 @@ def write_unet_predicted_heatmaps(mode, batch_size, learning_rate, duration):
     for name, data, preds in zip(names, dset_valid, predict(dset_valid)):
         for i in range(16):
             image = data[..., i, 0]
-            image = np.concatenate([image, image], axis=-1) / np.max(image)
+            image = np.concatenate([image, image, image], axis=-1) / np.max(image)
             image = np.stack([np.zeros(image.shape), image, np.zeros(image.shape)], axis=-1)
-            image[:, 512:, 0] = preds[i, ...]
+            image[:, 512:1024, 0] = np.sum(data[..., i, 1:], axis=-1)
+            image[:, 1024:, 0] = preds[i, ...]
             imageio.imsave('%s_%s.png' % (name, i), image)
