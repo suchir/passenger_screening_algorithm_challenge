@@ -46,7 +46,7 @@ def get_threat_heatmaps(mode):
 
         open('done', 'w').close()
     else:
-        f = h5py.File('data.hdf5')
+        f = h5py.File('data.hdf5', 'r')
         th = f['th']
     return th
 
@@ -62,7 +62,7 @@ def get_data_and_threat_heatmaps(mode):
             dset[i] = np.concatenate([data[..., np.newaxis], hmap], axis=-1)
         open('done', 'w').close()
     else:
-        f = h5py.File('data.hdf5')
+        f = h5py.File('data.hdf5', 'r')
         dset = f['dset']
     return names, labels, dset
 
