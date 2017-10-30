@@ -4,16 +4,19 @@ from common.math import sigmoid, log_loss
 from . import tf_models
 from . import dataio
 
+import matplotlib.pyplot as plt
 import tensorflow as tf
 import numpy as np
 import os
 import datetime
 import time
 import tqdm
+import math
 
 
 @cached(version=0)
-def train_unet_cnn(mode, batch_size, learning_rate, duration):
+def train_unet_cnn(mode, batch_size, learning_rate, duration, rotate_images=False,
+                   include_reflection=False):
     assert 'train' in mode
     assert batch_size <= 16
     height, width = 660, 512
@@ -24,6 +27,15 @@ def train_unet_cnn(mode, batch_size, learning_rate, duration):
     thmap = tf.placeholder(tf.float32, [None, height, width])
     resized_images = tf.image.resize_images(tf.expand_dims(images, -1), (width, width))
     resized_thmap = tf.image.resize_images(tf.expand_dims(thmap, -1), (width, width))
+
+    if include_reflection:
+        flipped_images = tf.concat([resized_images[0:1], resized_images[:0:-1]], axis=0)
+        resized_images = tf.concat([resized_images, flipped_images[:, :, ::-1, :]], axis=-1)
+
+    if rotate_images:
+        angles = tf.random_uniform([batch_size], maxval=2*math.pi)
+        resized_images = tf.contrib.image.rotate(resized_images, angles)
+        resized_thmap = tf.contrib.image.rotate(resized_thmap, angles)
 
     logits = tf_models.unet_cnn(resized_images, width, 32, width, 64)
     pred_hmap = tf.squeeze(tf.image.resize_images(tf.sigmoid(logits), (height, width)))
@@ -58,6 +70,7 @@ def train_unet_cnn(mode, batch_size, learning_rate, duration):
                 preds.append(sess.run(pred_hmap, feed_dict=feed(data)))
                 if len(preds)*batch_size == 16:
                     yield np.concatenate(preds)
+                    preds = []
 
     if os.path.exists('done'):
         return predict
