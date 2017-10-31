@@ -16,9 +16,11 @@ import math
 
 @cached(version=0)
 def train_unet_cnn(mode, batch_size, learning_rate, duration, rotate_images=False,
-                   include_reflection=False):
+                   include_reflection=False, conv3d=False):
     assert 'train' in mode
     assert batch_size <= 16
+    if conv3d:
+        assert not rotate_images and not include_reflection
     height, width = 660, 512
 
     tf.reset_default_graph()
@@ -31,13 +33,12 @@ def train_unet_cnn(mode, batch_size, learning_rate, duration, rotate_images=Fals
     if include_reflection:
         flipped_images = tf.concat([resized_images[0:1], resized_images[:0:-1]], axis=0)
         resized_images = tf.concat([resized_images, flipped_images[:, :, ::-1, :]], axis=-1)
-
     if rotate_images:
         angles = tf.random_uniform([batch_size], maxval=2*math.pi)
         resized_images = tf.contrib.image.rotate(resized_images, angles)
         resized_thmap = tf.contrib.image.rotate(resized_thmap, angles)
 
-    logits = tf_models.unet_cnn(resized_images, width, 32, width, 64)
+    logits = tf_models.unet_cnn(resized_images, width, 32, width, 64, conv3d=conv3d)
     pred_hmap = tf.squeeze(tf.image.resize_images(tf.sigmoid(logits), (height, width)))
     loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=resized_thmap,
                                                                   logits=logits))

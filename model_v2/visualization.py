@@ -74,8 +74,8 @@ def naive_cluster_passengers(mode, n_clusters):
 
 
 @cached(threat_segmentation_models.train_unet_cnn, version=1)
-def write_unet_predicted_heatmaps(mode, batch_size, learning_rate, duration):
-    predict = threat_segmentation_models.train_unet_cnn(mode, batch_size, learning_rate, duration)
+def write_unet_predicted_heatmaps(mode, *args, **kwargs):
+    predict = threat_segmentation_models.train_unet_cnn(mode, *args, **kwargs)
 
     valid_mode = mode.replace('train', 'valid')
     names, _, dset_valid = dataio.get_data_and_threat_heatmaps(valid_mode)
