@@ -16,11 +16,9 @@ import math
 
 @cached(version=0)
 def train_unet_cnn(mode, batch_size, learning_rate, duration, rotate_images=False,
-                   include_reflection=False, conv3d=False):
+                   include_reflection=False, conv3d=False, refine3d=False):
     assert 'train' in mode
     assert batch_size <= 16
-    if conv3d:
-        assert not rotate_images and not include_reflection
     height, width = 660, 512
 
     tf.reset_default_graph()
@@ -42,9 +40,17 @@ def train_unet_cnn(mode, batch_size, learning_rate, duration, rotate_images=Fals
     pred_hmap = tf.squeeze(tf.image.resize_images(tf.sigmoid(logits), (height, width)))
     loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=resized_thmap,
                                                                   logits=logits))
-    train_summary = tf.summary.scalar('train_loss', loss)
+
+    if refine3d:
+        logits = tf_models.unet_cnn(logits, width, 4, width, 8, conv3d=True)
+        pred_hmap = tf.squeeze(tf.image.resize_images(tf.sigmoid(logits), (height, width)))
+        refined_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=resized_thmap,
+                                                                              logits=logits))
+
+
+    train_summary = tf.summary.scalar('train_loss', refined_loss if refine3d else loss)
     optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
-    train_step = optimizer.minimize(loss)
+    train_step = optimizer.minimize(loss + refined_loss if refine3d else loss)
 
     saver = tf.train.Saver()
     model_path = os.getcwd() + '/model.ckpt'
