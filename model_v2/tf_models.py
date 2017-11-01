@@ -1,7 +1,7 @@
 import tensorflow as tf
 
 
-def unet_cnn(x, min_res, out_res, init_filters, conv3d=False):
+def unet_cnn(x, in_res, min_res, out_res, init_filters, conv3d=False):
     def block(x, n_filters):
         for _ in range(2):
             if conv3d:
@@ -16,23 +16,25 @@ def unet_cnn(x, min_res, out_res, init_filters, conv3d=False):
         x = tf.expand_dims(x, 0)
 
     blocks = []
-    while x.shape[1] > min_res:
+    while in_res > min_res:
         x = block(x, 2*int(x.shape[-1]))
         blocks.append(x)
         if conv3d:
             x = tf.layers.max_pooling3d(x, [1, 2, 2], [1, 2, 2])
         else:
             x = tf.layers.max_pooling2d(x, 2, 2)
+        in_res //= 2;
 
     x = block(x, 2*int(x.shape[-1]))
 
-    while x.shape[1] < out_res:
+    while in_res < out_res:
         if conv3d:
             x = tf.layers.conv3d_transpose(x, x.shape[-1], [1, 2, 2], [1, 2, 2])
         else:
             x = tf.layers.conv2d_transpose(x, x.shape[-1], 2, 2)
         x = tf.concat([blocks.pop(), x], axis=-1)
         x = block(x, int(x.shape[-1])//2)
+        in_res *= 2
 
     if conv3d:
         x = tf.layers.conv3d(x, 1, 1, 1)
@@ -42,7 +44,7 @@ def unet_cnn(x, min_res, out_res, init_filters, conv3d=False):
     return x
 
 
-def hourglass_cnn(x, min_res, out_res, num_filters, num_output=1, downsample=True):
+def hourglass_cnn(x, in_res, min_res, out_res, num_filters, num_output=1, downsample=True):
     def block(x):
         y = tf.layers.conv2d(x, num_filters//2, 1, 1, padding='same', activation=tf.nn.relu)
         y = tf.layers.conv2d(y, num_filters//2, 3, 1, padding='same', activation=tf.nn.relu)

@@ -32,12 +32,12 @@ def train_unet_cnn(mode, batch_size, learning_rate, duration, rotate_images=Fals
 
     if scale_images:
         size = tf.random_uniform([2], minval=int(0.75*width), maxval=width, dtype=tf.int32)
+        h_pad, w_pad = (width-size[0])//2, (width-size[1])//2
+        padding = [[0, 0], [h_pad, width-size[0]-h_pad], [w_pad, width-size[1]-w_pad]]
         resized_images = tf.image.resize_images(resized_images, size)
-        resized_images = tf.image.pad_to_bounding_box(resized_images, (width-size[0])//2,
-                                                      (width-size[1])//2, width, width)
+        resized_images = tf.expand_dims(tf.pad(tf.squeeze(resized_images), padding), -1)
         resized_thmap = tf.image.resize_images(resized_thmap, size)
-        resized_thmap = tf.image.pad_to_bounding_box(resized_thmap, (width-size[0])//2,
-                                                     (width-size[1])//2, width, width)
+        resized_thmap = tf.expand_dims(tf.pad(tf.squeeze(resized_thmap), padding), -1)
     if include_reflection:
         flipped_images = tf.concat([resized_images[0:1], resized_images[:0:-1]], axis=0)
         resized_images = tf.concat([resized_images, flipped_images[:, :, ::-1, :]], axis=-1)
@@ -46,8 +46,11 @@ def train_unet_cnn(mode, batch_size, learning_rate, duration, rotate_images=Fals
         resized_images = tf.contrib.image.rotate(resized_images, angles)
         resized_thmap = tf.contrib.image.rotate(resized_thmap, angles)
 
+    imean, ivar = tf.nn.moments(resized_images, [0, 1, 2, 3])
+    resized_images = (resized_images - imean) / tf.sqrt(ivar)
+
     if model == 'unet':
-        logits = tf_models.unet_cnn(resized_images, 32, width, 64, conv3d=conv3d)
+        logits = tf_models.unet_cnn(resized_images, width, 32, width, 64, conv3d=conv3d)
     else:
         logits = tf_models.hourglass_cnn(resized_images, 4, width, 64)
     pred_hmap = tf.squeeze(tf.image.resize_images(tf.sigmoid(logits), (height, width)))
@@ -73,11 +76,8 @@ def train_unet_cnn(mode, batch_size, learning_rate, duration, rotate_images=Fals
     model_path = os.getcwd() + '/model.ckpt'
 
     def feed(data):
-        image = data[..., 0]
-        image -= np.mean(image)
-        image /= np.std(image)
         return {
-            images: image,
+            images: data[..., 0],
             thmap: np.sum(data[..., 1:], axis=-1)
         }
 
