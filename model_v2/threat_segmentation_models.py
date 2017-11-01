@@ -48,9 +48,9 @@ def train_unet_cnn(mode, batch_size, learning_rate, duration, rotate_images=Fals
 
     if refine2d or refine3d:
         if refine2d:
-            logits = tf.concat([tf.concat([logits[-1], logits[:-1]], axis=0),
+            logits = tf.concat([tf.concat([logits[-1:], logits[:-1]], axis=0),
                                 logits,
-                                tf.concat([logits[:-1], logits[-1]], axis=0)],
+                                tf.concat([logits[1:], logits[0:1]], axis=0)],
                                axis=-1)
         logits = tf_models.unet_cnn(logits, 4, width, 8, conv3d=refine3d)
         pred_hmap = tf.squeeze(tf.image.resize_images(tf.sigmoid(logits), (height, width)))
