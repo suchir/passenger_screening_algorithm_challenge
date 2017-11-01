@@ -16,9 +16,10 @@ import math
 
 @cached(version=0)
 def train_unet_cnn(mode, batch_size, learning_rate, duration, rotate_images=False,
-                   include_reflection=False, conv3d=False, refine3d=False):
+                   include_reflection=False, conv3d=False, refine3d=False, model='unet'):
     assert 'train' in mode
     assert batch_size <= 16
+    assert model in ('unet', 'hourglass')
     height, width = 660, 512
 
     tf.reset_default_graph()
@@ -36,7 +37,10 @@ def train_unet_cnn(mode, batch_size, learning_rate, duration, rotate_images=Fals
         resized_images = tf.contrib.image.rotate(resized_images, angles)
         resized_thmap = tf.contrib.image.rotate(resized_thmap, angles)
 
-    logits = tf_models.unet_cnn(resized_images, width, 32, width, 64, conv3d=conv3d)
+    if model == 'unet':
+        logits = tf_models.unet_cnn(resized_images, 32, width, 64, conv3d=conv3d)
+    else:
+        logits = tf_models.hourglass_cnn(resized_images, 4, width, 64)
     pred_hmap = tf.squeeze(tf.image.resize_images(tf.sigmoid(logits), (height, width)))
     loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=resized_thmap,
                                                                   logits=logits))

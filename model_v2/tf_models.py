@@ -1,7 +1,7 @@
 import tensorflow as tf
 
 
-def unet_cnn(x, in_res, min_res, out_res, init_filters, conv3d=False):
+def unet_cnn(x, min_res, out_res, init_filters, conv3d=False):
     def block(x, n_filters):
         for _ in range(2):
             if conv3d:
@@ -39,4 +39,35 @@ def unet_cnn(x, in_res, min_res, out_res, init_filters, conv3d=False):
         x = tf.squeeze(x, axis=0)
     else:
         x = tf.layers.conv2d(x, 1, 1, 1)
+    return x
+
+
+def hourglass_cnn(x, min_res, out_res, num_filters, num_output=1, downsample=True):
+    def block(x):
+        y = tf.layers.conv2d(x, num_features//2, 1, 1, padding='same', activation=tf.nn.relu)
+        y = tf.layers.conv2d(y, num_features//2, 3, 1, padding='same', activation=tf.nn.relu)
+        y = tf.layers.conv2d(y, num_features, 1, 1, padding='same', activation=tf.nn.relu)
+        return x + y
+
+    if downsample:
+        x = tf.layers.conv2d(x, num_features, 7, 2, padding='same', activation=tf.nn.relu)
+        x = tf.layers.max_pooling2d(x, 2, 2)
+
+    blocks = []
+    while not blocks or blocks[-1].shape[1] > bottleneck:
+        x = block(x)
+        blocks.append(block(x))
+        x = tf.layers.max_pooling2d(x, 2, 2)
+
+    x = block(block(block(x)))
+
+    while blocks:
+        size = int(blocks[-1].shape[1])
+        x = tf.image.resize_images(x, (size, size))
+        x += blocks[-1]
+        x = block(x)
+        blocks.pop()
+
+    x = tf.layers.conv2d(x, num_output, 1, 1)
+    x = tf.image.resize_images(x, [out_res, out_res])
     return x
