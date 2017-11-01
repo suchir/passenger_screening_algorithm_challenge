@@ -17,7 +17,7 @@ import math
 @cached(version=0)
 def train_unet_cnn(mode, batch_size, learning_rate, duration, rotate_images=False,
                    include_reflection=False, conv3d=False, refine2d=False, refine3d=False,
-                   model='unet'):
+                   model='unet', scale_images=False):
     assert 'train' in mode
     assert batch_size <= 16
     assert model in ('unet', 'hourglass')
@@ -30,6 +30,14 @@ def train_unet_cnn(mode, batch_size, learning_rate, duration, rotate_images=Fals
     resized_images = tf.image.resize_images(tf.expand_dims(images, -1), (width, width))
     resized_thmap = tf.image.resize_images(tf.expand_dims(thmap, -1), (width, width))
 
+    if scale_images:
+        size = tf.random_uniform([2], minval=int(0.75*width), maxval=width, dtype=tf.int32)
+        resized_images = tf.image.resize_images(resized_images, size)
+        resized_images = tf.image.pad_to_bounding_box(resized_images, (width-size[0])//2,
+                                                      (width-size[1])//2, width, width)
+        resized_thmap = tf.image.resize_images(resized_thmap, size)
+        resized_thmap = tf.image.pad_to_bounding_box(resized_thmap, (width-size[0])//2,
+                                                     (width-size[1])//2, width, width)
     if include_reflection:
         flipped_images = tf.concat([resized_images[0:1], resized_images[:0:-1]], axis=0)
         resized_images = tf.concat([resized_images, flipped_images[:, :, ::-1, :]], axis=-1)
