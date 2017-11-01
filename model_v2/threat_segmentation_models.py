@@ -16,7 +16,8 @@ import math
 
 @cached(version=0)
 def train_unet_cnn(mode, batch_size, learning_rate, duration, rotate_images=False,
-                   include_reflection=False, conv3d=False, refine3d=False, model='unet'):
+                   include_reflection=False, conv3d=False, refine2d=False, refine3d=False,
+                   model='unet'):
     assert 'train' in mode
     assert batch_size <= 16
     assert model in ('unet', 'hourglass')
@@ -45,12 +46,16 @@ def train_unet_cnn(mode, batch_size, learning_rate, duration, rotate_images=Fals
     loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=resized_thmap,
                                                                   logits=logits))
 
-    if refine3d:
-        logits = tf_models.unet_cnn(logits, width, 4, width, 8, conv3d=True)
+    if refine2d or refine3d:
+        if refine2d:
+            logits = tf.concat([tf.transpose(logits, [15]+list(range(15))),
+                                logits,
+                                tf.transpose(logits, list(range(1, 16))+[0])],
+                               axis=-1)
+        logits = tf_models.unet_cnn(logits, 4, width, 8, conv3d=refine3d)
         pred_hmap = tf.squeeze(tf.image.resize_images(tf.sigmoid(logits), (height, width)))
         refined_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=resized_thmap,
                                                                               logits=logits))
-
 
     train_summary = tf.summary.scalar('train_loss', refined_loss if refine3d else loss)
     optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
