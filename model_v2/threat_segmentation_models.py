@@ -57,9 +57,9 @@ def train_unet_cnn(mode, batch_size, learning_rate, duration, rotate_images=Fals
         refined_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=resized_thmap,
                                                                               logits=logits))
 
-    train_summary = tf.summary.scalar('train_loss', refined_loss if refine3d else loss)
+    train_summary = tf.summary.scalar('train_loss', refined_loss if refine2d or refine3d else loss)
     optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
-    train_step = optimizer.minimize(loss + refined_loss if refine3d else loss)
+    train_step = optimizer.minimize(loss + refined_loss if refine2d or refine3d else loss)
 
     saver = tf.train.Saver()
     model_path = os.getcwd() + '/model.ckpt'
