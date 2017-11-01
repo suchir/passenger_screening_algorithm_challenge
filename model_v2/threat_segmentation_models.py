@@ -52,7 +52,7 @@ def train_unet_cnn(mode, batch_size, learning_rate, duration, rotate_images=Fals
     if model == 'unet':
         logits = tf_models.unet_cnn(resized_images, width, 32, width, 64, conv3d=conv3d)
     else:
-        logits = tf_models.hourglass_cnn(resized_images, 4, width, 64)
+        logits = tf_models.hourglass_cnn(resized_images, width, 4, width, 64)
     pred_hmap = tf.squeeze(tf.image.resize_images(tf.sigmoid(logits), (height, width)))
     loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=resized_thmap,
                                                                   logits=logits))

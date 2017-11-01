@@ -56,19 +56,20 @@ def hourglass_cnn(x, in_res, min_res, out_res, num_filters, num_output=1, downsa
         x = tf.layers.max_pooling2d(x, 2, 2)
 
     blocks = []
-    while not blocks or blocks[-1].shape[1] > min_res:
+    while in_res > min_res:
         x = block(x)
         blocks.append(block(x))
         x = tf.layers.max_pooling2d(x, 2, 2)
+        in_res //= 2
 
     x = block(block(block(x)))
 
     while blocks:
-        size = int(blocks[-1].shape[1])
-        x = tf.image.resize_images(x, (size, size))
+        x = tf.image.resize_images(x, (in_res, in_res))
         x += blocks[-1]
         x = block(x)
         blocks.pop()
+        in_res *= 2
 
     x = tf.layers.conv2d(x, num_output, 1, 1)
     x = tf.image.resize_images(x, [out_res, out_res])
