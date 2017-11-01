@@ -44,17 +44,17 @@ def unet_cnn(x, min_res, out_res, init_filters, conv3d=False):
 
 def hourglass_cnn(x, min_res, out_res, num_filters, num_output=1, downsample=True):
     def block(x):
-        y = tf.layers.conv2d(x, num_features//2, 1, 1, padding='same', activation=tf.nn.relu)
-        y = tf.layers.conv2d(y, num_features//2, 3, 1, padding='same', activation=tf.nn.relu)
-        y = tf.layers.conv2d(y, num_features, 1, 1, padding='same', activation=tf.nn.relu)
+        y = tf.layers.conv2d(x, num_filters//2, 1, 1, padding='same', activation=tf.nn.relu)
+        y = tf.layers.conv2d(y, num_filters//2, 3, 1, padding='same', activation=tf.nn.relu)
+        y = tf.layers.conv2d(y, num_filters, 1, 1, padding='same', activation=tf.nn.relu)
         return x + y
 
     if downsample:
-        x = tf.layers.conv2d(x, num_features, 7, 2, padding='same', activation=tf.nn.relu)
+        x = tf.layers.conv2d(x, num_filters, 7, 2, padding='same', activation=tf.nn.relu)
         x = tf.layers.max_pooling2d(x, 2, 2)
 
     blocks = []
-    while not blocks or blocks[-1].shape[1] > bottleneck:
+    while not blocks or blocks[-1].shape[1] > min_res:
         x = block(x)
         blocks.append(block(x))
         x = tf.layers.max_pooling2d(x, 2, 2)
