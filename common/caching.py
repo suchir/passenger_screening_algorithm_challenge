@@ -29,9 +29,13 @@ def read_input_dir(loc=''):
     return change_directory('input/%s' % loc)
 
 
+def cache_to_log(cache):
+    return 'log/%s' % cache[6:]
+
+
 def read_log_dir():
     assert _fn_stack, "Can't read log dir outside of a cached function."
-    return change_directory('log/%s' % _fn_stack[-1][1][6:])
+    return change_directory(cache_to_log(_fn_stack[-1][1]))
 
 
 def _strargs(*args, **kwargs):
@@ -84,13 +88,16 @@ class CachedFunction(object):
         return self._cache[path]
 
     def sync_cache(self, box, *args, **kwargs):
-        path = self._path(*args, **kwargs)
-        assert not os.path.exists(path), 'cache already exists for %s' % path
-        os.makedirs(path)
+        cache_path = self._path(*args, **kwargs)
+        log_path = cache_to_log(cache_path)
+        for path in (cache_path, log_path):
+            assert not os.path.exists(path), 'path already exists for %s' % path
+            os.makedirs(path)
 
-        remote_path = '%s:%s/%s/*' % (box, REMOTE_ROOT_DIR, path)
-        subprocess.check_call(['gcloud', 'compute', 'scp', '--recurse', remote_path, path],
-                              shell=True)
+        for path in (cache_path, log_path):
+            remote_path = '%s:%s/%s/*' % (box, REMOTE_ROOT_DIR, path)
+            subprocess.check_call(['gcloud', 'compute', 'scp', '--recurse', remote_path, path],
+                                  shell=True)
 
 
 def cached(*deps, version=0, subdir=None):
