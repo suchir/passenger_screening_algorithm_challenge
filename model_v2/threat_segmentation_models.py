@@ -17,7 +17,8 @@ import math
 @cached(version=0)
 def train_unet_cnn(mode, batch_size, learning_rate, duration, rotate_images=False,
                    include_reflection=False, conv3d=False, refine2d=False, refine3d=False,
-                   model='unet', scale_images=False):
+                   model='unet', scale_images=False, stack_hourglass=False,
+                   pool_angles=False):
     assert 'train' in mode
     assert batch_size <= 16
     assert model in ('unet', 'hourglass')
@@ -52,11 +53,21 @@ def train_unet_cnn(mode, batch_size, learning_rate, duration, rotate_images=Fals
     if model == 'unet':
         logits = tf_models.unet_cnn(resized_images, width, 32, width, 64, conv3d=conv3d)
     else:
-        logits = tf_models.hourglass_cnn(resized_images, width, 4, width, 64)
+        feat, logits = tf_models.hourglass_cnn(resized_images, width, 4, width, 64)
     pred_hmap = tf.squeeze(tf.image.resize_images(tf.sigmoid(logits), (height, width)))
     loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=resized_thmap,
                                                                   logits=logits))
 
+    if stack_hourglass:
+        if pool_angles:
+            feat = tf.concat([tf.concat([feat[-1:], feat[:-1]], axis=0),
+                              feat,
+                              tf.concat([feat[1:], feat[0:1]], axis=0)],
+                              axis=-1)
+        _, logits = tf_models.hourglass_cnn(feat, width//4, 4, width, 64, downsample=False)
+        pred_hmap = tf.squeeze(tf.image.resize_images(tf.sigmoid(logits), (height, width)))
+        refined_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=resized_thmap,
+                                                                              logits=logits))
     if refine2d or refine3d:
         if refine2d:
             logits = tf.concat([tf.concat([logits[-1:], logits[:-1]], axis=0),
@@ -67,10 +78,11 @@ def train_unet_cnn(mode, batch_size, learning_rate, duration, rotate_images=Fals
         pred_hmap = tf.squeeze(tf.image.resize_images(tf.sigmoid(logits), (height, width)))
         refined_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=resized_thmap,
                                                                               logits=logits))
+    refined = stack_hourglass or refine2d or refine3d
 
-    train_summary = tf.summary.scalar('train_loss', refined_loss if refine2d or refine3d else loss)
+    train_summary = tf.summary.scalar('train_loss', refined_loss if refined else loss)
     optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
-    train_step = optimizer.minimize(loss + refined_loss if refine2d or refine3d else loss)
+    train_step = optimizer.minimize(loss + refined_loss if refined else loss)
 
     saver = tf.train.Saver()
     model_path = os.getcwd() + '/model.ckpt'

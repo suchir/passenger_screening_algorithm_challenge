@@ -55,6 +55,8 @@ def hourglass_cnn(x, in_res, min_res, out_res, num_filters, num_output=1, downsa
         x = tf.layers.conv2d(x, num_filters, 7, 2, padding='same', activation=tf.nn.relu)
         x = tf.layers.max_pooling2d(x, 2, 2)
         in_res //= 4
+    elif x.shape[-1] != num_filters:
+        x = tf.layers.conv2d(x, num_filters, 1, 1, padding='same', activation=tf.nn.relu)
 
     blocks = []
     while in_res > min_res:
@@ -72,6 +74,6 @@ def hourglass_cnn(x, in_res, min_res, out_res, num_filters, num_output=1, downsa
         blocks.pop()
         in_res *= 2
 
-    x = tf.layers.conv2d(x, num_output, 1, 1)
-    x = tf.image.resize_images(x, [out_res, out_res])
-    return x
+    y = tf.layers.conv2d(x, num_output, 1, 1)
+    y = tf.image.resize_images(y, [out_res, out_res])
+    return x, y
