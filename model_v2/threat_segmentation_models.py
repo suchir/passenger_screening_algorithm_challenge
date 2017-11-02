@@ -45,6 +45,8 @@ def train_hourglass_cnn(mode, duration, cluster_type='groundtruth', learning_rat
     pred = pred[:, h_pad:-(width-size[0]-h_pad), w_pad:-(width-size[1]-w_pad), :]
     pred = tf.image.resize_images(pred, (height, width))
     pred = tf.cond(flip_lr > 0, lambda: pred[:, :, ::-1, :], lambda: pred)
+    if single_pred:
+        pred = pred[..., 0]
 
     optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
     train_step = optimizer.minimize(loss)
