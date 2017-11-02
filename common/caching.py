@@ -90,11 +90,10 @@ class CachedFunction(object):
     def sync_cache(self, box, *args, **kwargs):
         cache_path = self._path(*args, **kwargs)
         log_path = cache_to_log(cache_path)
-        for path in (cache_path, log_path):
-            assert not os.path.exists(path), 'path already exists for %s' % path
-            os.makedirs(path)
 
         for path in (cache_path, log_path):
+            if not os.path.exists(path):
+                os.makedirs(path)
             remote_path = '%s:%s/%s/*' % (box, REMOTE_ROOT_DIR, path)
             subprocess.check_call(['gcloud', 'compute', 'scp', '--recurse', remote_path, path],
                                   shell=True)
