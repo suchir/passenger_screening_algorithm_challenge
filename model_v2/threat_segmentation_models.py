@@ -54,7 +54,6 @@ def train_unet_cnn(mode, batch_size, learning_rate, duration, rotate_images=Fals
         logits = tf_models.unet_cnn(resized_images, width, 32, width, 64, conv3d=conv3d)
     else:
         feat, logits = tf_models.hourglass_cnn(resized_images, width, 4, width, 64)
-    pred_hmap = tf.squeeze(tf.image.resize_images(tf.sigmoid(logits), (height, width)))
     loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=resized_thmap,
                                                                   logits=logits))
 
@@ -65,7 +64,6 @@ def train_unet_cnn(mode, batch_size, learning_rate, duration, rotate_images=Fals
                               tf.concat([feat[1:], feat[0:1]], axis=0)],
                               axis=-1)
         _, logits = tf_models.hourglass_cnn(feat, width//4, 4, width, 64, downsample=False)
-        pred_hmap = tf.squeeze(tf.image.resize_images(tf.sigmoid(logits), (height, width)))
         refined_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=resized_thmap,
                                                                               logits=logits))
     if refine2d or refine3d:
@@ -75,7 +73,6 @@ def train_unet_cnn(mode, batch_size, learning_rate, duration, rotate_images=Fals
                                 tf.concat([logits[1:], logits[0:1]], axis=0)],
                                axis=-1)
         logits = tf_models.unet_cnn(logits, 4, width, 8, conv3d=refine3d)
-        pred_hmap = tf.squeeze(tf.image.resize_images(tf.sigmoid(logits), (height, width)))
         refined_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=resized_thmap,
                                                                               logits=logits))
     refined = stack_hourglass or refine2d or refine3d
@@ -83,6 +80,11 @@ def train_unet_cnn(mode, batch_size, learning_rate, duration, rotate_images=Fals
     train_summary = tf.summary.scalar('train_loss', refined_loss if refined else loss)
     optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
     train_step = optimizer.minimize(loss + refined_loss if refined else loss)
+
+    pred_hmap = tf.sigmoid(logits)
+    if scale_images:
+        pred_hmap = pred_hmap[:, h_pad:-(width-size[0]-h_pad), w_pad:-(width-size[1]-w_pad), :]
+    pred_hmap = tf.squeeze(tf.image.resize_images(pred_hmap, (height, width)))
 
     saver = tf.train.Saver()
     model_path = os.getcwd() + '/model.ckpt'
@@ -98,15 +100,14 @@ def train_unet_cnn(mode, batch_size, learning_rate, duration, rotate_images=Fals
             for i in range(0, 16, batch_size):
                 yield np.rollaxis(data[..., i:i+batch_size, :], -2, 0)
 
-    def predict(dset):
+    def predict(dset, n_sample=16):
         with tf.Session() as sess:
             saver.restore(sess, model_path)
-            preds = []
             for data in batch_gen(dset):
-                preds.append(sess.run(pred_hmap, feed_dict=feed(data)))
-                if len(preds)*batch_size == 16:
-                    yield np.concatenate(preds)
-                    preds = []
+                pred = np.zeros(16, height, width)
+                for _ in range(n_sample):
+                    pred += sess.run(pred_hmap, feed_dict=feed(data))
+                yield pred / n_sample
 
     if os.path.exists('done'):
         return predict
