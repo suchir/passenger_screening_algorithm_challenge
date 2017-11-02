@@ -104,7 +104,7 @@ def train_unet_cnn(mode, batch_size, learning_rate, duration, rotate_images=Fals
         with tf.Session() as sess:
             saver.restore(sess, model_path)
             for data in batch_gen(dset):
-                pred = np.zeros(16, height, width)
+                pred = np.zeros((16, height, width))
                 for _ in range(n_sample):
                     pred += sess.run(pred_hmap, feed_dict=feed(data))
                 yield pred / n_sample
