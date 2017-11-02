@@ -136,14 +136,20 @@ def read_data(infile):
 
 
 @cached(version=0)
+def get_passenger_clusters():
+    n_clusters = 24
+    clusters = [None] * n_clusters
+    for i in range(n_clusters):
+        with read_input_dir('hand_labeling/passenger_id/%s' % i):
+            clusters[i] = [x.split('.')[0] for x in glob.glob('*')]
+    return clusters
+
+
+@cached(version=0)
 def get_cv_splits(n_split):
     if not os.path.exists('cv.pkl'):
-        n_id = 24
-        id_names = [None] * n_id
-        for i in range(n_id):
-            with read_input_dir('hand_labeling/passenger_id/%s' % i):
-                id_names[i] = [x.split('.')[0] for x in glob.glob('*')]
-
+        id_names = get_passenger_clusters()
+        n_id = len(id_names)
         labels = get_train_labels()
         id_labels = np.array([np.sum([labels[x] for x in id_names[i]], axis=0)
                               for i in range(n_id)])
