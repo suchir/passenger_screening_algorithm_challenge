@@ -64,7 +64,7 @@ def hourglass_cnn(x, in_res, min_res, out_res, num_filters, num_output=1, downsa
             x = tf.layers.batch_normalization(x, training=training)
         x = tf.layers.max_pooling2d(x, 2, 2)
         in_res //= 4
-    elif x.shape[-1] != num_filters:
+    else:
         x = tf.layers.conv2d(x, num_filters, 1, 1, padding='same', activation=tf.nn.relu)
         if batchnorm:
             x = tf.layers.batch_normalization(x, training=training)
