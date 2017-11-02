@@ -17,8 +17,8 @@ import math
 @cached(version=0)
 def train_unet_cnn(mode, batch_size, learning_rate, duration, rotate_images=False,
                    include_reflection=False, conv3d=False, refine2d=False, refine3d=False,
-                   model='unet', scale_images=False, stack_hourglass=False,
-                   pool_angles=False):
+                   model='unet', scale_images=False, stack_hourglass=False, pool_angles=False,
+                   batchnorm=False):
     assert 'train' in mode
     assert batch_size <= 16
     assert model in ('unet', 'hourglass')
@@ -26,6 +26,7 @@ def train_unet_cnn(mode, batch_size, learning_rate, duration, rotate_images=Fals
 
     tf.reset_default_graph()
 
+    training = tf.placeholder(tf.bool)
     images = tf.placeholder(tf.float32, [None, height, width])
     thmap = tf.placeholder(tf.float32, [None, height, width])
     resized_images = tf.image.resize_images(tf.expand_dims(images, -1), (width, width))
@@ -53,7 +54,8 @@ def train_unet_cnn(mode, batch_size, learning_rate, duration, rotate_images=Fals
     if model == 'unet':
         logits = tf_models.unet_cnn(resized_images, width, 32, width, 64, conv3d=conv3d)
     else:
-        feat, logits = tf_models.hourglass_cnn(resized_images, width, 4, width, 64)
+        feat, logits = tf_models.hourglass_cnn(resized_images, width, 4, width, 64,
+                                               training=training, batchnorm=batchnorm)
     loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=resized_thmap,
                                                                   logits=logits))
 
@@ -63,7 +65,8 @@ def train_unet_cnn(mode, batch_size, learning_rate, duration, rotate_images=Fals
                               feat,
                               tf.concat([feat[1:], feat[0:1]], axis=0)],
                               axis=-1)
-        _, logits = tf_models.hourglass_cnn(feat, width//4, 4, width, 64, downsample=False)
+        _, logits = tf_models.hourglass_cnn(feat, width//4, 4, width, 64, downsample=False,
+                                            training=training, batchnorm=batchnorm)
         refined_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=resized_thmap,
                                                                               logits=logits))
     if refine2d or refine3d:
@@ -79,8 +82,9 @@ def train_unet_cnn(mode, batch_size, learning_rate, duration, rotate_images=Fals
 
     train_summary = tf.summary.scalar('train_loss', refined_loss if refined else loss)
     optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
-    train_step = optimizer.minimize(loss + refined_loss if refined else loss)
-
+    update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
+    with tf.control_dependencies(update_ops):
+        train_step = optimizer.minimize(loss + refined_loss if refined else loss)
     pred_hmap = tf.sigmoid(logits)
     if scale_images:
         pred_hmap = pred_hmap[:, h_pad:-(width-size[0]-h_pad), w_pad:-(width-size[1]-w_pad), :]
@@ -89,10 +93,11 @@ def train_unet_cnn(mode, batch_size, learning_rate, duration, rotate_images=Fals
     saver = tf.train.Saver()
     model_path = os.getcwd() + '/model.ckpt'
 
-    def feed(data):
+    def feed(data, is_training=True):
         return {
             images: data[..., 0],
-            thmap: np.sum(data[..., 1:], axis=-1)
+            thmap: np.sum(data[..., 1:], axis=-1),
+            training: is_training
         }
 
     def batch_gen(x):
@@ -106,7 +111,7 @@ def train_unet_cnn(mode, batch_size, learning_rate, duration, rotate_images=Fals
             for data in batch_gen(dset):
                 pred = np.zeros((16, height, width))
                 for _ in range(n_sample):
-                    pred += sess.run(pred_hmap, feed_dict=feed(data))
+                    pred += sess.run(pred_hmap, feed_dict=feed(data, False))
                 yield pred / n_sample
 
     if os.path.exists('done'):

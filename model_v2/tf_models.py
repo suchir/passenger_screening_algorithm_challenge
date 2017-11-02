@@ -44,19 +44,30 @@ def unet_cnn(x, in_res, min_res, out_res, init_filters, conv3d=False):
     return x
 
 
-def hourglass_cnn(x, in_res, min_res, out_res, num_filters, num_output=1, downsample=True):
+def hourglass_cnn(x, in_res, min_res, out_res, num_filters, num_output=1, downsample=True,
+                  training=False, batchnorm=False):
     def block(x):
         y = tf.layers.conv2d(x, num_filters//2, 1, 1, padding='same', activation=tf.nn.relu)
+        if batchnorm:
+            y = tf.layers.batch_normalization(y, training=training)
         y = tf.layers.conv2d(y, num_filters//2, 3, 1, padding='same', activation=tf.nn.relu)
+        if batchnorm:
+            y = tf.layers.batch_normalization(y, training=training)
         y = tf.layers.conv2d(y, num_filters, 1, 1, padding='same', activation=tf.nn.relu)
+        if batchnorm:
+            y = tf.layers.batch_normalization(y, training=training)
         return x + y
 
     if downsample:
         x = tf.layers.conv2d(x, num_filters, 7, 2, padding='same', activation=tf.nn.relu)
+        if batchnorm:
+            x = tf.layers.batch_normalization(x, training=training)
         x = tf.layers.max_pooling2d(x, 2, 2)
         in_res //= 4
     elif x.shape[-1] != num_filters:
         x = tf.layers.conv2d(x, num_filters, 1, 1, padding='same', activation=tf.nn.relu)
+        if batchnorm:
+            x = tf.layers.batch_normalization(x, training=training)
 
     blocks = []
     while in_res > min_res:
