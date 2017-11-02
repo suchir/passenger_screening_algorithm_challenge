@@ -58,7 +58,6 @@ class CachedFunction(object):
         self.ancestors = set.union({self}, *(x.ancestors for x in deps))
         self.version = sum(x.version for x in self.ancestors)
         self.subdir = subdir
-        self._cache = {}
         self._fn = fn
 
     def _path(self, *args, **kwargs):
@@ -76,16 +75,15 @@ class CachedFunction(object):
         t0 = time.time()
 
         path = self._path(*args, **kwargs)
-        if path not in self._cache:
-            _fn_stack.append((self, path))
-            with change_directory(path):
-                self._cache[path] = self._fn(*args, **kwargs)
-            _fn_stack.pop()
+        _fn_stack.append((self, path))
+        with change_directory(path):
+            ret = self._fn(*args, **kwargs)
+        _fn_stack.pop()
 
         delta = datetime.timedelta(seconds=time.time()-t0)
         print('%s|-> completed %s [%s]' % (indent, called, str(delta)))
 
-        return self._cache[path]
+        return ret
 
     def sync_cache(self, box, *args, **kwargs):
         cache_path = self._path(*args, **kwargs)
