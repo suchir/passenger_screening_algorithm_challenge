@@ -17,7 +17,7 @@ import random
 
 @cached(dataio.get_clustered_data_and_threat_heatmaps, version=0)
 def train_hourglass_cnn(mode, duration, cluster_type='groundtruth', learning_rate=1e-3,
-                        single_pred=False):
+                        single_pred=False, lr_decay_tolerance=999):
     assert 'train' in mode
     height, width = 660, 512
 
@@ -48,9 +48,11 @@ def train_hourglass_cnn(mode, duration, cluster_type='groundtruth', learning_rat
     if single_pred:
         pred = pred[..., 0]
 
-    optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
+    cur_learning_rate = tf.placeholder(tf.float32)
+    optimizer = tf.train.AdamOptimizer(learning_rate=cur_learning_rate)
     train_step = optimizer.minimize(loss)
-    train_summary = tf.summary.scalar('train_loss', loss)
+    loss_summary = tf.summary.scalar('train_loss', loss)
+    lr_summary = tf.summary.scalar('learning_rate', cur_learning_rate)
 
     saver = tf.train.Saver()
     model_path = os.getcwd() + '/model.ckpt'
@@ -61,7 +63,8 @@ def train_hourglass_cnn(mode, duration, cluster_type='groundtruth', learning_rat
         thmap0, thmap1 = np.sum(data0[..., 1:], axis=-1), np.sum(data1[..., 1:], axis=-1)
         return {
             images_in: np.stack([image0, image1], axis=-1),
-            thmap_in: np.stack([thmap0, thmap1], axis=-1) 
+            thmap_in: np.stack([thmap0, thmap1], axis=-1),
+            cur_learning_rate: learning_rate
         }
 
     def random_pair(ranges):
@@ -90,14 +93,16 @@ def train_hourglass_cnn(mode, duration, cluster_type='groundtruth', learning_rat
         return np.mean(losses)
 
     def train_model(sess):
-        it = 0
+        it, epoch = 0, 0
         t0 = time.time()
-        best_valid_loss = None
+        best_valid_loss, best_valid_epoch = None, 0
         while time.time() - t0 < duration * 3600:
             for _ in tqdm.trange(len(dset_train)):
-                _, cur_train_summary = sess.run([train_step, train_summary], feed_dict=
-                                                feed(*random_data(ranges_train, dset_train)))
-                writer.add_summary(cur_train_summary, it)
+                _, cur_loss_summary, cur_lr_summary = \
+                    sess.run([train_step, loss_summary, lr_summary],
+                             feed_dict=feed(*random_data(ranges_train, dset_train)))
+                writer.add_summary(cur_loss_summary, it)
+                writer.add_summary(cur_lr_summary, it)
                 it += 1
 
             valid_loss = eval_model(sess)
@@ -106,8 +111,13 @@ def train_hourglass_cnn(mode, duration, cluster_type='groundtruth', learning_rat
             writer.add_summary(cur_valid_summary, it)
 
             if best_valid_loss is None or valid_loss < best_valid_loss:
-                best_valid_loss = valid_loss
+                best_valid_loss, best_valid_epoch = valid_loss, epoch
                 saver.save(sess, model_path)
+            elif epoch - best_valid_epoch >= lr_decay_tolerance:
+                learning_rate /= math.sqrt(10)
+                best_valid_epoch = epoch
+            epoch += 1
+
 
     with tf.Session() as sess:
         sess.run(tf.global_variables_initializer())
