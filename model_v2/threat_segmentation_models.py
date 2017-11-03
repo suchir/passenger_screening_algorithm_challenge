@@ -121,7 +121,7 @@ def train_hourglass_cnn(mode, duration, cluster_type='groundtruth', learning_rat
                 writer.add_summary(cur_lr_summary, it)
                 it += 1
 
-            valid_loss = eval_model(sess, n_epoch=3)
+            valid_loss = eval_model(sess)
             cur_valid_summary = tf.Summary()
             cur_valid_summary.value.add(tag='valid_loss', simple_value=valid_loss)
             writer.add_summary(cur_valid_summary, it)
