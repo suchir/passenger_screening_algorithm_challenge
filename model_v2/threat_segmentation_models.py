@@ -85,9 +85,9 @@ def train_hourglass_cnn(mode, duration, cluster_type='groundtruth', learning_rat
     with read_log_dir():
         writer = tf.summary.FileWriter(os.getcwd())
 
-    def eval_model(sess):
+    def eval_model(sess, n_epoch=1):
         losses = []
-        for _ in tqdm.trange(len(dset_valid)):
+        for _ in tqdm.trange(len(dset_valid)*n_epoch):
             cur_loss = sess.run(loss, feed_dict=feed(*random_data(ranges_valid, dset_valid)))
             losses.append(cur_loss)
         return np.mean(losses)
@@ -105,7 +105,7 @@ def train_hourglass_cnn(mode, duration, cluster_type='groundtruth', learning_rat
                 writer.add_summary(cur_lr_summary, it)
                 it += 1
 
-            valid_loss = eval_model(sess)
+            valid_loss = eval_model(sess, n_epoch=3)
             cur_valid_summary = tf.Summary()
             cur_valid_summary.value.add(tag='valid_loss', simple_value=valid_loss)
             writer.add_summary(cur_valid_summary, it)
