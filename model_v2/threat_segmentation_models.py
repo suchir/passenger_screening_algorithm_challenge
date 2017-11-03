@@ -17,17 +17,18 @@ import random
 
 @cached(dataio.get_clustered_data_and_threat_heatmaps, version=0)
 def train_hourglass_cnn(mode, duration, cluster_type='groundtruth', learning_rate=1e-3,
-                        single_pred=False, lr_decay_tolerance=999):
+                        single_pred=False, lr_decay_tolerance=999, late_fusion=False):
     assert 'train' in mode
     height, width = 660, 512
+    res = 512
 
     tf.reset_default_graph()
     images_in = tf.placeholder(tf.float32, [None, height, width, 2])
     thmap_in = tf.placeholder(tf.float32, [None, height, width, 2])
 
-    size = tf.random_uniform([2], minval=int(0.75*width), maxval=width, dtype=tf.int32)
-    h_pad, w_pad = (width-size[0])//2, (width-size[1])//2
-    padding = [[0, 0], [h_pad, width-size[0]-h_pad], [w_pad, width-size[1]-w_pad]]
+    size = tf.random_uniform([2], minval=int(0.75*res), maxval=res, dtype=tf.int32)
+    h_pad, w_pad = (res-size[0])//2, (res-size[1])//2
+    padding = [[0, 0], [h_pad, res-size[0]-h_pad], [w_pad, res-size[1]-w_pad]]
     images = tf.image.resize_images(images_in, size)
     images = tf.stack([tf.pad(images[..., i], padding) for i in range(2)], axis=-1)
     thmap = tf.image.resize_images(thmap_in, size)
@@ -37,21 +38,31 @@ def train_hourglass_cnn(mode, duration, cluster_type='groundtruth', learning_rat
     images = tf.cond(flip_lr > 0, lambda: images[:, :, ::-1, :], lambda: images)
     thmap = tf.cond(flip_lr > 0, lambda: thmap[:, :, ::-1, :], lambda: thmap)
 
-    _, logits = tf_models.hourglass_cnn(images, width, 4, width, 64, num_output=2)
-    loss = tf.nn.sigmoid_cross_entropy_with_logits(labels=thmap, logits=logits)
-    loss = tf.reduce_mean(loss[..., 0] if single_pred else loss)
-
-    pred = tf.sigmoid(logits)
-    pred = pred[:, h_pad:-(width-size[0]-h_pad), w_pad:-(width-size[1]-w_pad), :]
-    pred = tf.image.resize_images(pred, (height, width))
-    pred = tf.cond(flip_lr > 0, lambda: pred[:, :, ::-1, :], lambda: pred)
-    if single_pred:
-        pred = pred[..., 0]
+    if late_fusion:
+        split_images = tf.expand_dims(tf.reshape(tf.transpose(images, [0, 3, 1, 2]),
+                                                 [-1, res, res]), -1)
+        split_thmap = tf.expand_dims(tf.reshape(tf.transpose(thmap, [0, 3, 1, 2]),
+                                                [-1, res, res]), -1)
+        feats, logits = tf_models.hourglass_cnn(split_images, res, 4, res, 64)
+        loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=split_thmap,
+                                                                      logits=logits))
+        feats = tf.reshape(tf.transpose(tf.reshape(feats, [-1, 2, res//4, res//4, 64]),
+                                        [0, 2, 3, 4, 1]), [-1, res//4, res//4, 128])
+        _, logits = tf_models.hourglass_cnn(feats, res//4, 4, res, 64, num_output=2,
+                                            downsample=False)
+        final_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=thmap,
+                                                                            logits=logits))
+    else:
+        _, logits = tf_models.hourglass_cnn(images, res, 4, res, 64, num_output=2)
+        loss = tf.nn.sigmoid_cross_entropy_with_logits(labels=thmap, logits=logits)
+        loss = tf.reduce_mean(loss[..., 0] if single_pred else loss)
+        final_loss = loss
 
     cur_learning_rate = tf.placeholder(tf.float32)
     optimizer = tf.train.AdamOptimizer(learning_rate=cur_learning_rate)
-    train_step = optimizer.minimize(loss)
+    train_step = optimizer.minimize(loss + final_loss)
     loss_summary = tf.summary.scalar('train_loss', loss)
+    final_loss_summary = tf.summary.scalar('train_final_loss', final_loss)
     lr_summary = tf.summary.scalar('learning_rate', cur_learning_rate)
 
     saver = tf.train.Saver()
@@ -88,20 +99,22 @@ def train_hourglass_cnn(mode, duration, cluster_type='groundtruth', learning_rat
     def eval_model(sess, n_epoch=1):
         losses = []
         for _ in tqdm.trange(len(dset_valid)*n_epoch):
-            cur_loss = sess.run(loss, feed_dict=feed(*random_data(ranges_valid, dset_valid)))
+            cur_loss = sess.run(final_loss, feed_dict=feed(*random_data(ranges_valid, dset_valid)))
             losses.append(cur_loss)
         return np.mean(losses)
 
     def train_model(sess):
+        nonlocal learning_rate
         it, epoch = 0, 0
         t0 = time.time()
         best_valid_loss, best_valid_epoch = None, 0
         while time.time() - t0 < duration * 3600:
             for _ in tqdm.trange(len(dset_train)):
-                _, cur_loss_summary, cur_lr_summary = \
-                    sess.run([train_step, loss_summary, lr_summary],
+                _, cur_loss_summary, cur_final_loss_summary, cur_lr_summary = \
+                    sess.run([train_step, loss_summary, final_loss_summary, lr_summary],
                              feed_dict=feed(*random_data(ranges_train, dset_train)))
                 writer.add_summary(cur_loss_summary, it)
+                writer.add_summary(cur_final_loss_summary, it)
                 writer.add_summary(cur_lr_summary, it)
                 it += 1
 
