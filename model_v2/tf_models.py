@@ -45,7 +45,7 @@ def unet_cnn(x, in_res, min_res, out_res, init_filters, conv3d=False):
 
 
 def hourglass_cnn(x, in_res, min_res, out_res, num_filters, num_output=1, downsample=True,
-                  training=False, batchnorm=False):
+                  training=False, batchnorm=False, skip_connection=False):
     def block(x):
         y = tf.layers.conv2d(x, num_filters//2, 1, 1, padding='same', activation=tf.nn.relu)
         if batchnorm:
@@ -72,7 +72,7 @@ def hourglass_cnn(x, in_res, min_res, out_res, num_filters, num_output=1, downsa
     blocks = []
     while in_res > min_res:
         x = block(x)
-        blocks.append(block(x))
+        blocks.append(x if skip_connection else block(x))
         x = tf.layers.max_pooling2d(x, 2, 2)
         in_res //= 2
 

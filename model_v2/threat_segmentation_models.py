@@ -17,7 +17,8 @@ import random
 
 @cached(dataio.get_clustered_data_and_threat_heatmaps, version=0)
 def train_hourglass_cnn(mode, duration, cluster_type='groundtruth', learning_rate=1e-3,
-                        single_pred=False, lr_decay_tolerance=999, late_fusion=False):
+                        single_pred=False, lr_decay_tolerance=999, late_fusion=False,
+                        skip_connection=False):
     assert 'train' in mode
     height, width = 660, 512
     res = 512
@@ -43,17 +44,19 @@ def train_hourglass_cnn(mode, duration, cluster_type='groundtruth', learning_rat
                                                  [-1, res, res]), -1)
         split_thmap = tf.expand_dims(tf.reshape(tf.transpose(thmap, [0, 3, 1, 2]),
                                                 [-1, res, res]), -1)
-        feats, logits = tf_models.hourglass_cnn(split_images, res, 4, res, 64)
+        feats, logits = tf_models.hourglass_cnn(split_images, res, 4, res, 64,
+                                                skip_connection=skip_connection)
         loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=split_thmap,
                                                                       logits=logits))
         feats = tf.reshape(tf.transpose(tf.reshape(feats, [-1, 2, res//4, res//4, 64]),
                                         [0, 2, 3, 4, 1]), [-1, res//4, res//4, 128])
         _, logits = tf_models.hourglass_cnn(feats, res//4, 4, res, 64, num_output=2,
-                                            downsample=False)
+                                            downsample=False, skip_connection=skip_connection)
         final_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=thmap,
                                                                             logits=logits))
     else:
-        _, logits = tf_models.hourglass_cnn(images, res, 4, res, 64, num_output=2)
+        _, logits = tf_models.hourglass_cnn(images, res, 4, res, 64, num_output=2,
+                                            skip_connection=skip_connection)
         loss = tf.nn.sigmoid_cross_entropy_with_logits(labels=thmap, logits=logits)
         loss = tf.reduce_mean(loss[..., 0] if single_pred else loss)
         final_loss = loss
