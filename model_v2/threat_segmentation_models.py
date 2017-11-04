@@ -115,7 +115,7 @@ def train_hourglass_cnn(mode, duration, cluster_type='groundtruth', learning_rat
             writer.add_summary(cur_valid_summary, it)
 
             if best_valid_loss is None or valid_loss < best_valid_loss:
-                best_valid_loss, best_valid_epoch = valid_loss, best_valid_epoch
+                best_valid_loss, best_valid_epoch = valid_loss, epoch
                 saver.save(sess, model_path)
             elif epoch - best_valid_epoch >= lr_decay_tolerance:
                 learning_rate /= math.sqrt(10)
