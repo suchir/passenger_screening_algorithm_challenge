@@ -17,7 +17,8 @@ import random
 
 @cached(dataio.get_clustered_data_and_threat_heatmaps, version=0)
 def train_hourglass_cnn(mode, duration, cluster_type='groundtruth', learning_rate=1e-3,
-                        predict_one=False, lr_decay_tolerance=999, include_reflection=False):
+                        predict_one=False, lr_decay_tolerance=999, include_reflection=False,
+                        random_shift=False):
     assert 'train' in mode
     height, width = 660, 512
     res = 512
