@@ -26,13 +26,21 @@ def train_hourglass_cnn(mode, duration, cluster_type='groundtruth', learning_rat
     images_in = tf.placeholder(tf.float32, [None, height, width, 2])
     thmap_in = tf.placeholder(tf.float32, [None, height, width, 2])
 
-    size = tf.random_uniform([2], minval=int(0.75*res), maxval=res, dtype=tf.int32)
+    size = tf.random_uniform([2], minval=int(0.75*res), maxval=res-10, dtype=tf.int32)
+    if random_shift:
+        shift = tf.random_uniform([2], minval=-5, maxval=6, dtype=tf.int32)
+    else:
+        shift = [0, 0]
     h_pad, w_pad = (res-size[0])//2, (res-size[1])//2
-    padding = [[0, 0], [h_pad, res-size[0]-h_pad], [w_pad, res-size[1]-w_pad]]
+    padding = [
+        [[0, 0], [h_pad, res-size[0]-h_pad], [w_pad, res-size[1]-w_pad]],
+        [[0, 0], [h_pad-shift[0], res-size[0]-h_pad+shift[0]],
+         [w_pad-shift[1], res-size[1]-w_pad+shift[1]]],
+    ]
     images = tf.image.resize_images(images_in, size)
-    images = tf.stack([tf.pad(images[..., i], padding) for i in range(2)], axis=-1)
+    images = tf.stack([tf.pad(images[..., i], padding[i]) for i in range(2)], axis=-1)
     thmap = tf.image.resize_images(thmap_in, size)
-    thmap = tf.stack([tf.pad(thmap[..., i], padding) for i in range(2)], axis=-1)
+    thmap = tf.stack([tf.pad(thmap[..., i], padding[i]) for i in range(2)], axis=-1)
 
     flip_lr = tf.random_uniform([], maxval=2, dtype=tf.int32)
     images = tf.cond(flip_lr > 0, lambda: images[:, :, ::-1, :], lambda: images)
