@@ -3,6 +3,7 @@ from common.math import sigmoid, log_loss
 
 from . import tf_models
 from . import dataio
+from . import passenger_clustering
 
 import matplotlib.pyplot as plt
 import tensorflow as tf
@@ -13,12 +14,13 @@ import time
 import tqdm
 import math
 import random
+import h5py
 
 
-@cached(dataio.get_clustered_data_and_threat_heatmaps, version=0)
+@cached(passenger_clustering.get_clustered_data_and_threat_heatmaps, version=0)
 def train_hourglass_cnn(mode, duration, cluster_type='groundtruth', learning_rate=1e-3,
                         predict_one=False, lr_decay_tolerance=999, include_reflection=False,
-                        random_shift=False):
+                        random_shift=False, random_crop=False):
     assert 'train' in mode
     height, width = 660, 512
     res = 512
@@ -42,6 +44,11 @@ def train_hourglass_cnn(mode, duration, cluster_type='groundtruth', learning_rat
     images = tf.stack([tf.pad(images[..., i], padding[i]) for i in range(2)], axis=-1)
     thmap = tf.image.resize_images(thmap_in, size)
     thmap = tf.stack([tf.pad(thmap[..., i], padding[i]) for i in range(2)], axis=-1)
+    if random_crop:
+        res = 256
+        crop = tf.random_uniform([2], maxval=256, dtype=tf.int32)
+        images = images[:, crop[0]:crop[0]+res, crop[1]:crop[1]+res, :]
+        thmap = thmap[:, crop[0]:crop[0]+res, crop[1]:crop[1]+res, :]
 
     flip_lr = tf.random_uniform([], maxval=2, dtype=tf.int32)
     images = tf.cond(flip_lr > 0, lambda: images[:, :, ::-1, :], lambda: images)
@@ -66,6 +73,14 @@ def train_hourglass_cnn(mode, duration, cluster_type='groundtruth', learning_rat
     loss_summary = tf.summary.scalar('train_loss', loss)
     lr_summary = tf.summary.scalar('learning_rate', learning_rate_placeholder)
 
+    pred_hmap = tf.sigmoid(logits)
+    pred_hmap = tf.cond(flip_lr > 0, lambda: pred_hmap[:, :, ::-1, :], lambda: pred_hmap)
+    pred_hmap = pred_hmap[:, h_pad:-(res-size[0]-h_pad), w_pad:-(res-size[1]-w_pad), :]
+    pred_hmap = tf.squeeze(tf.image.resize_images(pred_hmap, (height, width)))
+    if predict_one:
+        pred_hmap = pred_hmap[..., 0]
+
+
     saver = tf.train.Saver()
     model_path = os.getcwd() + '/model.ckpt'
 
@@ -88,11 +103,25 @@ def train_hourglass_cnn(mode, duration, cluster_type='groundtruth', learning_rat
         i1, i2 = random_pair(ranges)
         return dset[i1], dset[i2]
 
+    class Model:
+        def __enter__(self):
+            self.sess = tf.Session()
+            saver.restore(self.sess, model_path)
+
+        def predict(self, data0, data1):
+            return self.sess.run(pred_hmap, feed_dict=feed(data0, data1))
+
+        def __exit__(self, *args):
+            self.sess.close()
+
+    if os.path.exists('done'):
+        return Model()
+
     valid_mode = mode.replace('train', 'valid')
-    ranges_train, _, _, dset_train = dataio.get_clustered_data_and_threat_heatmaps(mode,
-                                                                                   cluster_type)
-    ranges_valid, _, _, dset_valid = dataio.get_clustered_data_and_threat_heatmaps(valid_mode,
-                                                                                cluster_type)
+    ranges_train, _, _, dset_train = passenger_clustering.get_clustered_data_and_threat_heatmaps(
+                                        mode, cluster_type)
+    ranges_valid, _, _, dset_valid = passenger_clustering.get_clustered_data_and_threat_heatmaps(
+                                        valid_mode, cluster_type)
 
     with read_log_dir():
         writer = tf.summary.FileWriter(os.getcwd())
@@ -139,6 +168,28 @@ def train_hourglass_cnn(mode, duration, cluster_type='groundtruth', learning_rat
     open('done', 'w').close()
 
     return None
+
+
+@cached(train_hourglass_cnn, passenger_clustering.get_clustered_data_and_threat_heatmaps, version=1)
+def get_hourglass_cnn_predictions(mode, *args, **kwargs):
+    if not os.path.exists('done'):
+        model = train_hourglass_cnn(*args, **kwargs)
+        ranges, _, _, dset = passenger_clustering.get_clustered_data_and_threat_heatmaps(mode,
+                                kwargs.get('cluster_type', 'groundtruth'))
+
+        f = h5py.File('data.hdf5', 'w')
+        out = f.create_dataset('out', (len(dset), 16, 660, 512))
+        with model:
+            for group in tqdm.tqdm(ranges):
+                for i in tqdm.trange(*group):
+                    for j in tqdm.trange(*group):
+                        out[i] += model.predict(dset[i], dset[j])
+                    out[i] /= group[1] - group[0]
+        open('done', 'w').close()
+    else:
+        f = h5py.File('data.hdf5', 'r')
+        out = f['out']
+    return out
 
 
 @cached(version=0)
