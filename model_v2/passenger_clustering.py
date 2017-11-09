@@ -14,6 +14,8 @@ import h5py
 import pickle
 import imageio
 import time
+import multiprocessing
+import pyelastix
 
 
 @cached(get_passenger_clusters, dataio.get_data_and_threat_heatmaps, version=0, subdir='ssd')
@@ -190,3 +192,27 @@ def get_nearest_neighbors(mode):
     else:
         perm = np.load('perm.npy')
     return perm
+
+
+def _register_images(args):
+    return pyelastix.register(*args, verbose=0)[0]
+
+
+def register_images(im1, im2, params=None):
+    if params is None:
+        params = pyelastix.get_default_params()
+        params.FinalGridSpacingInPhysicalUnits = 16
+        params.NumberOfResolutions = 4
+        params.MaximumNumberOfIterations = 64
+    if isinstance(im1, list):
+        if not isinstance(im2, list):
+            im2 = [im2 for _ in range(len(im1))]
+        for _ in range(100):
+            try:
+                with multiprocessing.Pool(max(multiprocessing.cpu_count()//2, 1)) as p:
+                    return p.map(_register_images, [(i1, i2, params) for i1, i2 in zip(im1, im2)])
+            except FileNotFoundError:
+                pass
+        raise Exception('failed to register images')
+    else:
+        return _register_images((im1, im2, params))

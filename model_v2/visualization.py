@@ -13,6 +13,7 @@ import imageio
 import sklearn.cluster
 import sklearn.decomposition
 import os
+import pyelastix
 
 
 @cached(get_aps_data_hdf5, version=1)
@@ -155,3 +156,46 @@ def plot_nearest_neighbors(mode, max_near):
         rows = [np.concatenate(images[i:i+4], axis=1) for i in range(0, max_near, 4)]
         image = np.concatenate(rows, axis=0)
         imageio.imsave('%s_%s.png' % (n_wrong, name), image / image.max())
+
+
+@cached(get_aps_data_hdf5, version=1)
+def plot_image_registration_samples(mode, n_samples):
+    names, _, dset = get_aps_data_hdf5(mode)
+    group = passenger_clustering.get_passenger_groups(mode)
+    for spacing in tqdm.tqdm([8, 16, 32, 64]):
+        for num_res in tqdm.tqdm([2, 3, 4]):
+            for num_iter in tqdm.tqdm([8, 16, 32, 64, 128]):
+                np.random.seed(0)
+                im1, im2 = [], []
+                for i in range(n_samples):
+                    while True:
+                        i1, i2, angle = np.random.randint(len(dset)), np.random.randint(len(dset)), \
+                                        np.random.randint(16)
+                        if group[i1] == group[i2]:
+                            break
+                    d1, d2 = dset[i1, ..., angle], dset[i2, ..., angle]
+                    d1 /= d1.max()
+                    d2 /= d2.max()
+                    im1.append(d1)
+                    im2.append(d2)
+
+                params = pyelastix.get_default_params()
+                params.FinalGridSpacingInPhysicalUnits = spacing
+                params.NumberOfResolutions = num_res
+                params.MaximumNumberOfIterations = num_iter
+                reg = passenger_clustering.register_images(im1, im2, params)
+
+                for i, (d1, d2, im) in enumerate(zip(im1, im2, reg)):
+                    im /= im.max()
+                    image = np.concatenate([
+                        np.concatenate([d1, d2], axis=1),
+                        np.concatenate([im, np.zeros(d1.shape)], axis=1)
+                    ], axis=0)
+                    image = np.repeat(image[..., np.newaxis], 3, axis=-1)
+                    image[660:, 512:, 0] = d2
+                    image[660:, 512:, 1] = im
+
+                    path = '%s/%s/%s' % (spacing, num_res, num_iter)
+                    if not os.path.exists(path):
+                        os.makedirs(path)
+                    imageio.imsave('%s/%s.png' % (path, i), image)
