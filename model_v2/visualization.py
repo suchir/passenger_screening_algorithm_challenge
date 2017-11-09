@@ -13,7 +13,7 @@ import imageio
 import sklearn.cluster
 import sklearn.decomposition
 import os
-import pyelastix
+import common.pyelastix
 
 
 @cached(get_aps_data_hdf5, version=1)
@@ -179,7 +179,7 @@ def plot_image_registration_samples(mode, n_samples):
                     im1.append(d1)
                     im2.append(d2)
 
-                params = pyelastix.get_default_params()
+                params = common.pyelastix.get_default_params()
                 params.FinalGridSpacingInPhysicalUnits = spacing
                 params.NumberOfResolutions = num_res
                 params.MaximumNumberOfIterations = num_iter

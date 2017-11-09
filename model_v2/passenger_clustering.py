@@ -15,7 +15,7 @@ import pickle
 import imageio
 import time
 import multiprocessing
-import pyelastix
+import common.pyelastix
 import heapq
 
 
@@ -224,12 +224,12 @@ def get_candidate_neighbors(mode, min_neighbors):
 
 
 def _register_images(args):
-    return pyelastix.register(*args, verbose=0)[0]
+    return common.pyelastix.register(*args, verbose=0)[0]
 
 
 def register_images(im1, im2, params=None):
     if params is None:
-        params = pyelastix.get_default_params()
+        params = common.pyelastix.get_default_params()
         params.FinalGridSpacingInPhysicalUnits = 32
         params.NumberOfResolutions = 4
         params.MaximumNumberOfIterations = 64
