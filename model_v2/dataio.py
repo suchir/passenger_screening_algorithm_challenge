@@ -67,42 +67,6 @@ def get_data_and_threat_heatmaps(mode):
     return names, labels, dset
 
 
-@cached(get_passenger_clusters, get_data_and_threat_heatmaps, version=0, subdir='ssd')
-def get_clustered_data_and_threat_heatmaps(mode, cluster_type):
-    assert cluster_type in ('groundtruth')
-
-    if not os.path.exists('done'):
-        clusters = get_passenger_clusters()
-
-        names_in, labels_in, dset_in = get_data_and_threat_heatmaps(mode)
-        clusters = [[y for y in x if y in names_in] for x in clusters]
-        clusters = [x for x in clusters if x]
-        names = sum(clusters, [])
-        names_in_idx = {name: i for i, name in enumerate(names_in)}
-        perm = [names_in_idx[name] for name in names]
-        labels = np.stack([labels_in[i] for i in perm])
-        ranges = [(0, len(x)) for x in clusters]
-        for i in range(1, len(ranges)):
-            ranges[i] = (ranges[i][0]+ranges[i-1][1], ranges[i][1]+ranges[i-1][1])
-
-        f = h5py.File('data.hdf5', 'w')
-        dset = f.create_dataset('dset', dset_in.shape)
-        for i in tqdm.trange(len(dset)):
-            dset[i] = dset_in[perm[i]]
-
-        with open('pkl', 'wb') as f:
-            pickle.dump((ranges, names), f)
-        np.save('labels.npy', labels)
-        open('done', 'w').close()
-    else:
-        with open('pkl', 'rb') as f:
-            ranges, names = pickle.load(f)
-        labels = np.load('labels.npy')
-        f = h5py.File('data.hdf5', 'r')
-        dset = f['dset']
-    return ranges, names, labels, dset
-
-
 @cached(get_data_and_threat_heatmaps, version=0)
 def sanity_check_threat_heatmaps(mode):
     names, labels, dset = get_data_and_threat_heatmaps(mode)
