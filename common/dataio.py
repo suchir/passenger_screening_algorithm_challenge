@@ -203,7 +203,7 @@ def get_data(mode, dtype):
             files = files[100:]
         elif mode.endswith('valid'):
             files = files[:100]
-        else:
+        elif mode.startswith('train') or mode.startswith('valid'):
             split = int(mode[-1])
             cv = get_cv_splits(5)
             in_valid = lambda file: cv[file.split('.')[0]] == split
