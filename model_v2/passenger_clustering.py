@@ -16,6 +16,7 @@ import imageio
 import time
 import multiprocessing
 import pyelastix
+import heapq
 
 
 @cached(get_passenger_clusters, dataio.get_data_and_threat_heatmaps, version=0, subdir='ssd')
@@ -194,6 +195,34 @@ def get_nearest_neighbors(mode):
     return perm
 
 
+@cached(get_distance_matrix, train_clustering_model, version=0)
+def get_candidate_neighbors(mode, min_neighbors):
+    if not os.path.exists('done'):
+        dmat = get_distance_matrix(mode)
+        n = len(dmat)
+        pmat = np.reshape(train_clustering_model('all', 0.25)(dmat), (n, -1))
+        perm = np.argsort(-pmat, axis=1)
+
+        conf = np.zeros(n)
+        for i in range(n):
+            conf[i] += np.sum(pmat[perm[i, :min_neighbors]])
+        order = np.argsort(conf)
+
+        cand = [[] for _ in range(n)]
+        for i in range(n):
+            n_cand = min_neighbors * int(-np.log2((i+1)/n) + 1)
+            for j in range(n_cand):
+                cand[order[i]].append(perm[order[i]][j])
+
+        with open('pkl', 'wb') as f:
+            pickle.dump(cand, f)
+        open('done', 'w').close()
+    else:
+        with open('pkl', 'rb') as f:
+            cand = pickle.load(f)
+    return cand
+
+
 def _register_images(args):
     return pyelastix.register(*args, verbose=0)[0]
 
@@ -201,7 +230,7 @@ def _register_images(args):
 def register_images(im1, im2, params=None):
     if params is None:
         params = pyelastix.get_default_params()
-        params.FinalGridSpacingInPhysicalUnits = 16
+        params.FinalGridSpacingInPhysicalUnits = 32
         params.NumberOfResolutions = 4
         params.MaximumNumberOfIterations = 64
     if isinstance(im1, list):
@@ -211,8 +240,45 @@ def register_images(im1, im2, params=None):
             try:
                 with multiprocessing.Pool(max(multiprocessing.cpu_count()//2, 1)) as p:
                     return p.map(_register_images, [(i1, i2, params) for i1, i2 in zip(im1, im2)])
-            except FileNotFoundError:
+            except:
                 pass
         raise Exception('failed to register images')
     else:
         return _register_images((im1, im2, params))
+
+
+@cached(get_aps_data_hdf5, get_candidate_neighbors, subdir='ssd', version=0)
+def get_augmented_aps_segmentation_data(mode):
+    if not os.path.exists('done'):
+        names, labels, dset_in = dataio.get_data_and_threat_heatmaps(mode)
+        n = len(dset_in)
+        n = 5
+        f = h5py.File('data.hdf5', 'w')
+        dset = f.create_dataset('dset', (n, 16, 660, 512, 7))
+
+        batch_size = 1
+        for i in tqdm.trange(0, n, batch_size):
+            im1, im2 = [], []
+            for j in range(i, min(n, i+batch_size)):
+                data = np.rollaxis(dset_in[j], 2, 0)
+                dset[j, ..., 0] = data[..., 0]
+                dset[j, ..., 4:] = data[..., 1:]
+                rot = np.concatenate([data[0:1, :, ::-1, 0], data[-1::-1, :, ::-1, 0]])
+                for k in range(16):
+                    im1.append(rot[k] / rot[k].max())
+                    im2.append(data[k, :, :, 0] / data[k, :, :, 0].max())
+
+            reg = register_images(im1, im2)
+            for j in range(i, min(n, i+batch_size)):
+                for k in range(16):
+                    dset[j, k, ..., 1] = reg[16*(j-i)+k] / reg[16*(j-i)+k].max()
+
+        with open('pkl', 'wb') as f:
+            pickle.dump((names, labels), f)
+        open('done', 'w').close()
+    else:
+        with open('pkl', 'rb') as f:
+            names, labels = pickle.load(f)
+        f = h5py.File('data.hdf5')
+        dset = f['dset']
+    return names, labels, dset
