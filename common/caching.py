@@ -15,7 +15,7 @@ _cached_fns = set()
 
 
 @contextlib.contextmanager
-def change_directory(loc):
+def change_directory(loc=''):
     loc = '%s/%s' % (ROOT_DIR, loc)
     if not os.path.exists(loc):
         os.makedirs(loc)
@@ -88,17 +88,18 @@ class CachedFunction(object):
         _fn_stack.append((self, path))
 
 
-        if self.cloud_cache:
-            on_cloud = self._cached_on_cloud(path)
-            if not os.path.exists(path):
-                os.makedirs(path)
-                self._download_cache(path)
+        with change_directory():
+            if self.cloud_cache:
+                on_cloud = self._cached_on_cloud(path)
+                if on_cloud and not os.path.exists(path):
+                    os.makedirs(path)
+                    self._download_cache(path)
 
-        with change_directory(path):
-            ret = self._fn(*args, **kwargs)
+            with change_directory(path):
+                ret = self._fn(*args, **kwargs)
 
-        if self.cloud_cache and not on_cloud:
-            self._upload_cache(path)
+            if self.cloud_cache and not on_cloud:
+                self._upload_cache(path)
 
         _fn_stack.pop()
         delta = datetime.timedelta(seconds=time.time()-t0)
