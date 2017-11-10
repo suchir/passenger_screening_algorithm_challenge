@@ -22,7 +22,6 @@ import ctypes
 import tempfile
 import threading
 import subprocess
-import multiprocessing
 
 import numpy as np
 
@@ -225,14 +224,11 @@ def _clear_temp_dir():
     """ Clear the temporary directory.
     """
     tempdir = get_tempdir()
-    try:
-        for fname in os.listdir(tempdir):
-            try:
-                os.remove( os.path.join(tempdir, fname) )
-            except Exception:
-                pass
-    except Exception:
-        pass
+    for fname in os.listdir(tempdir):
+        try:
+            os.remove( os.path.join(tempdir, fname) )
+        except Exception:
+            pass
 
 
 def _get_image_paths(im1, im2):
@@ -271,7 +267,7 @@ def _get_image_paths(im1, im2):
 
 # %% Some helper stuff
 
-def _system3(cmd, verbose=False, n_tries=5):
+def _system3(cmd, verbose=False):
     """ Execute the given command in a subprocess and wait for it to finish.
     A thread is run that prints output of the process if verbose is True.
     """
@@ -304,24 +300,7 @@ def _system3(cmd, verbose=False, n_tries=5):
     
     # Start process that runs the command
     p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-
-    # Set cpu affinity
-    pids = [int(x) for x in subprocess.check_output(['pgrep', 'elastix']).split(b'\n')[:-1]]
-    affinities = []
-    for pid in pids:
-        try:
-            affinities.append(os.sched_getaffinity(pid))
-        except ProcessLookupError:
-            pass
-    used_cpus = set.union(*[x for x in affinities if len(x) == 1], set())
-    max_cpu = multiprocessing.cpu_count()
-    for i in range(max_cpu):
-        if i not in used_cpus:
-            break
-    if i == max_cpu - 1:
-        i = 0
-    os.sched_setaffinity(p.pid, [i])
-
+    
     # Keep reading stdout from it
     # thread.start_new_thread(poll_process, (p,))  Python 2.x
     my_thread = threading.Thread(target=poll_process, args=(p,))
@@ -350,12 +329,9 @@ def _system3(cmd, verbose=False, n_tries=5):
     if interrupted:
         raise RuntimeError('Registration process interrupted by the user.')
     if p.returncode:
-        if n_tries:
-            _system3(cmd, verbose, n_tries - 1)
-        else:
-            stdout.append(p.stdout.read().decode())
-            print(''.join(stdout))
-            raise RuntimeError('An error occured during the registration.')
+        stdout.append(p.stdout.read().decode())
+        print(''.join(stdout))
+        raise RuntimeError('An error occured during the registration.')
 
 
 def _get_dtype_maps():
