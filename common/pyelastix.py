@@ -22,6 +22,7 @@ import ctypes
 import tempfile
 import threading
 import subprocess
+import multiprocessing
 
 import numpy as np
 
@@ -300,7 +301,19 @@ def _system3(cmd, verbose=False):
     
     # Start process that runs the command
     p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-    
+
+    # Set cpu affinity
+    pids = subprocess.call(['pgrep', 'elastix'])
+    used_cpus = sum(os.sched_getaffinity(pid) for pid in pids)
+    max_cpu = multiprocessing.cpu_count()
+    for i in range(max_cpu):
+        if i not in used_cpus:
+            break
+    if i == max_cpu:
+        i = 0
+    os.sched_setaffinity(p.pid, [i])
+    print(os.sched_getaffinity(p.pid))
+
     # Keep reading stdout from it
     # thread.start_new_thread(poll_process, (p,))  Python 2.x
     my_thread = threading.Thread(target=poll_process, args=(p,))
