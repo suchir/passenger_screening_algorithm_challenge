@@ -225,11 +225,14 @@ def _clear_temp_dir():
     """ Clear the temporary directory.
     """
     tempdir = get_tempdir()
-    for fname in os.listdir(tempdir):
-        try:
-            os.remove( os.path.join(tempdir, fname) )
-        except Exception:
-            pass
+    try:
+        for fname in os.listdir(tempdir):
+            try:
+                os.remove( os.path.join(tempdir, fname) )
+            except Exception:
+                pass
+    except Exception:
+        pass
 
 
 def _get_image_paths(im1, im2):
