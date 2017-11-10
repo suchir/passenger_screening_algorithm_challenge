@@ -223,8 +223,17 @@ def get_candidate_neighbors(mode, min_neighbors):
     return cand
 
 
+def _scale_image(im1, im2):
+    x, y = np.reshape(im1, (-1)), np.reshape(im2, (-1))
+    a = np.vstack([x, np.ones(len(x))]).T
+    (m, c), res, _, _ = np.linalg.lstsq(a, y)
+    return im1*m + c, res
+
+
 def _register_images(args):
-    return common.pyelastix.register(*args, verbose=0)[0]
+    im1, im2, params = args
+    reg, _ = common.pyelastix.register(im1, im2, params, verbose=0)
+    return _scale_image(reg, im2)
 
 
 def register_images(im1, im2, params=None):
@@ -240,38 +249,53 @@ def register_images(im1, im2, params=None):
             try:
                 with multiprocessing.Pool(multiprocessing.cpu_count()) as p:
                     return p.map(_register_images, [(i1, i2, params) for i1, i2 in zip(im1, im2)])
-            except:
-                pass
+            except Exception as e:
+                print(e)
         raise Exception('failed to register images')
     else:
         return _register_images((im1, im2, params))
 
 
-@cached(get_aps_data_hdf5, get_candidate_neighbors, subdir='ssd', version=0)
+@cached(get_aps_data_hdf5, get_candidate_neighbors, subdir='ssd', cloud_cache=True, version=0)
 def get_augmented_aps_segmentation_data(mode, n_split, split_id):
     if not os.path.exists('done'):
         names, labels, dset_in = dataio.get_data_and_threat_heatmaps(mode)
         n = len(dset_in)
         m = int(np.ceil(n/n_split))
         i1, i2 = split_id*m, (split_id+1)*m
+        n_neighbor = 8
 
         f = h5py.File('data.hdf5', 'w')
-        dset = f.create_dataset('dset', (n, 16, 660, 512, 7))
-        neighbors = get_candidate_neighbors(mode, 8)
+        dset = f.create_dataset('dset', (i2-i1, 16, 660, 512, 7))
+        neighbors = get_candidate_neighbors(mode, n_neighbor)
 
+        scale = 1000
         for i in tqdm.trange(i1, i2):
-            data = np.rollaxis(dset_in[i], 2, 0)
+            data = np.rollaxis(dset_in[i], 2, 0) * scale
             dset[i-i1, ..., 0] = data[..., 0]
             dset[i-i1, ..., 4:] = data[..., 1:]
 
             im1, im2 = [], []
             rot = np.concatenate([data[0:1, :, ::-1, 0], data[-1::-1, :, ::-1, 0]])
             for j in range(16):
-                im1.append(rot[j] / rot[j].max())
-                im2.append(data[j, :, :, 0] / data[j, :, :, 0].max())
-
+                im1.append(rot[j])
+                im2.append(data[j, ..., 0])
             reg = register_images(im1, im2)
-            dset[i-i1, ..., 1] = reg
+            for j in range(16):
+                dset[i-i1, j, ..., 1] = reg[j][0]
+
+            cand = []
+            for j in tqdm.tqdm(neighbors[i]):
+                im1, im2 = [], []
+                for k in range(16):
+                    im1.append(dset_in[j, ..., k, 0] * scale)
+                    im2.append(data[k, ..., 0])
+                reg = register_images(im1, im2)
+                cand.append((sum(x[1] for x in reg), (np.stack([x[0] for x in reg]))))
+            cand.sort()
+            cand = np.stack([x[1] for x in cand[:n_neighbor]])
+            dset[i-i1, ..., 2] = np.mean(cand, axis=0)
+            dset[i-i1, ..., 3] = np.std(cand, axis=0)
 
         with open('pkl', 'wb') as f:
             pickle.dump((names, labels), f)
