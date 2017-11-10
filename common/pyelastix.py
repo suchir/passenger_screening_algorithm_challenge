@@ -271,7 +271,7 @@ def _get_image_paths(im1, im2):
 
 # %% Some helper stuff
 
-def _system3(cmd, verbose=False):
+def _system3(cmd, verbose=False, n_tries=5):
     """ Execute the given command in a subprocess and wait for it to finish.
     A thread is run that prints output of the process if verbose is True.
     """
@@ -350,9 +350,12 @@ def _system3(cmd, verbose=False):
     if interrupted:
         raise RuntimeError('Registration process interrupted by the user.')
     if p.returncode:
-        stdout.append(p.stdout.read().decode())
-        print(''.join(stdout))
-        raise RuntimeError('An error occured during the registration.')
+        if n_tries:
+            _system3(cmd, verbose, n_tries - 1)
+        else:
+            stdout.append(p.stdout.read().decode())
+            print(''.join(stdout))
+            raise RuntimeError('An error occured during the registration.')
 
 
 def _get_dtype_maps():
