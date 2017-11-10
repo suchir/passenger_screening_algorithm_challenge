@@ -8,6 +8,7 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
 ROOT_DIR = os.getcwd()
 REMOTE_ROOT_DIR = '/home/Suchir/passenger_screening_algorithm_challenge'
+CACHE_BUCKET = 'gs://psac_cache'
 
 _fn_stack = []
 _cached_fns = set()
@@ -50,7 +51,7 @@ def _sanitize_dirname(name):
 
 
 class CachedFunction(object):
-    def __init__(self, fn, version, subdir, *deps):
+    def __init__(self, fn, version, subdir, cloud_cache, *deps):
         assert fn.__name__ not in _cached_fns, "Can't have two cached functions with the same name."
         _cached_fns.add(fn.__name__)
 
@@ -58,6 +59,7 @@ class CachedFunction(object):
         self.ancestors = set.union({self}, *(x.ancestors for x in deps))
         self.version = sum(x.version for x in self.ancestors)
         self.subdir = subdir
+        self.cloud_cache = cloud_cache
         self._fn = fn
 
     def _path(self, *args, **kwargs):
@@ -68,18 +70,37 @@ class CachedFunction(object):
         path = 'cache/%s' % path
         return path
 
+    def _cached_on_cloud(self, path):
+        return subprocess.call('gsutil -q stat "%s/%s/*"' % (CACHE_BUCKET, path), shell=True) == 0
+
+    def _download_cache(self, path):
+        subprocess.check_call('gsutil -m cp -r "%s/%s/*" "%s"' % (CACHE_BUCKET, path, path), shell=True)
+
+    def _upload_cache(self, path):
+        subprocess.check_call('gsutil -m cp -r "%s" %s' % (path, CACHE_BUCKET), shell=True)
+
     def __call__(self, *args, **kwargs):
         indent = '| ' * len(_fn_stack)
         called = '%s(%s) v%s' % (self._fn.__name__, _strargs(*args, **kwargs), self.version)
         print('%s|-> executing %s ' % (indent, called))
         t0 = time.time()
-
         path = self._path(*args, **kwargs)
         _fn_stack.append((self, path))
+
+
+        if self.cloud_cache:
+            on_cloud = self._cached_on_cloud(path)
+            if not os.path.exists(path):
+                os.makedirs(path)
+                self._download_cache(path)
+
         with change_directory(path):
             ret = self._fn(*args, **kwargs)
-        _fn_stack.pop()
 
+        if self.cloud_cache and not on_cloud:
+            self._upload_cache(path)
+
+        _fn_stack.pop()
         delta = datetime.timedelta(seconds=time.time()-t0)
         print('%s|-> completed %s [%s]' % (indent, called, str(delta)))
 
@@ -97,8 +118,8 @@ class CachedFunction(object):
                                   shell=True)
 
 
-def cached(*deps, version=0, subdir=None):
+def cached(*deps, version=0, subdir=None, cloud_cache=False):
     def decorator(fn):
-        return CachedFunction(fn, version, subdir, *deps)
+        return CachedFunction(fn, version, subdir, cloud_cache, *deps)
 
     return decorator

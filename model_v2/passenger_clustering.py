@@ -195,7 +195,7 @@ def get_nearest_neighbors(mode):
     return perm
 
 
-@cached(get_distance_matrix, train_clustering_model, version=0)
+@cached(get_distance_matrix, train_clustering_model, cloud_cache=True, version=0)
 def get_candidate_neighbors(mode, min_neighbors):
     if not os.path.exists('done'):
         dmat = get_distance_matrix(mode)
