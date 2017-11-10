@@ -307,12 +307,13 @@ def _system3(cmd, verbose=False):
 
     # Set cpu affinity
     pids = [int(x) for x in subprocess.check_output(['pgrep', 'elastix']).split(b'\n')[:-1]]
-    used_cpus = set.union(*[os.sched_getaffinity(pid) for pid in pids])
+    affinities = [os.sched_getaffinity(pid) for pid in pids]
+    used_cpus = set.union(*[x for x in affinities if len(x) == 1])
     max_cpu = multiprocessing.cpu_count()
     for i in range(max_cpu):
         if i not in used_cpus:
             break
-    if i == max_cpu:
+    if i == max_cpu - 1:
         i = 0
     os.sched_setaffinity(p.pid, [i])
 
