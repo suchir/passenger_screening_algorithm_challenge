@@ -252,11 +252,11 @@ def get_augmented_aps_segmentation_data(mode):
     if not os.path.exists('done'):
         names, labels, dset_in = dataio.get_data_and_threat_heatmaps(mode)
         n = len(dset_in)
-        n = 5
+        n = 32
         f = h5py.File('data.hdf5', 'w')
         dset = f.create_dataset('dset', (n, 16, 660, 512, 7))
 
-        batch_size = 1
+        batch_size = 8
         for i in tqdm.trange(0, n, batch_size):
             im1, im2 = [], []
             for j in range(i, min(n, i+batch_size)):
