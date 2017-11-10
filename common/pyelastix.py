@@ -312,7 +312,6 @@ def _system3(cmd, verbose=False):
     if i == max_cpu:
         i = 0
     os.sched_setaffinity(p.pid, [i])
-    print(os.sched_getaffinity(p.pid))
 
     # Keep reading stdout from it
     # thread.start_new_thread(poll_process, (p,))  Python 2.x
