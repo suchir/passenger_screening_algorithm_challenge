@@ -26,8 +26,9 @@ if __name__ == '__main__':
         subprocess.check_call(['wget', '-P', 'pyelastix/', url])
         subprocess.check_call(['tar', 'xvjf', 'pyelastix/elastix_linux64_v4.8.tar.bz2', '-C',
                                'pyelastix/'])
-        subprocess.check_call(['sudo', 'cp', 'pyelastix/bin/*', '/usr/local/bin'])
-        subprocess.check_call(['sudo', 'cp', 'pyelastix/lib/*', '/usr/local/lib'])
+        subprocess.check_call(['sudo', 'cp', 'pyelastix/bin/elastix', '/usr/local/bin'])
+        subprocess.check_call(['sudo', 'cp', 'pyelastix/bin/transformix', '/usr/local/bin'])
+        subprocess.check_call(['sudo', 'cp', 'pyelastix/lib/libANNlib.so', '/usr/local/lib'])
         subprocess.check_call(['rm', '-r', 'pyelastix'])
 
     subprocess.check_call(['pip', 'install', '-r', 'requirements.txt'])
