@@ -74,10 +74,12 @@ class CachedFunction(object):
         return subprocess.call('gsutil -q stat "%s/%s/*"' % (CACHE_BUCKET, path), shell=True) == 0
 
     def _download_cache(self, path):
-        subprocess.check_call('gsutil -m cp -r "%s/%s/*" "%s"' % (CACHE_BUCKET, path, path), shell=True)
+        subprocess.check_call('gsutil -m cp -r "%s/%s/*" "%s"' % (CACHE_BUCKET, path, path),
+                              shell=True)
 
     def _upload_cache(self, path):
-        subprocess.check_call('gsutil -m cp -r "%s" %s' % (path, CACHE_BUCKET), shell=True)
+        subprocess.check_call('gsutil -m cp -r "%s/*" %s/%s' % (path, CACHE_BUCKET, path),
+                              shell=True)
 
     def __call__(self, *args, **kwargs):
         indent = '| ' * len(_fn_stack)
