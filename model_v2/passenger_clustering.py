@@ -124,7 +124,7 @@ def get_distance_matrix(mode):
     return dmat
 
 
-@cached(get_aps_data_hdf5, get_distance_matrix, version=0)
+@cached(get_aps_data_hdf5, get_distance_matrix, cloud_cache=True, version=0)
 def train_clustering_model(mode, duration):
     tf.reset_default_graph()
 
