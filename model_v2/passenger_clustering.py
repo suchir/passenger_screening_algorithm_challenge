@@ -210,7 +210,7 @@ def get_candidate_neighbors(mode, min_neighbors):
 
         cand = [[] for _ in range(n)]
         for i in range(n):
-            n_cand = min_neighbors * int(-np.log2((i+1)/n) + 1)
+            n_cand = min(n, min_neighbors * int(-np.log2((i+1)/n) + 1))
             for j in range(n_cand):
                 cand[order[i]].append(perm[order[i]][j])
 
@@ -238,7 +238,7 @@ def register_images(im1, im2, params=None):
             im2 = [im2 for _ in range(len(im1))]
         for _ in range(100):
             try:
-                with multiprocessing.Pool(max(multiprocessing.cpu_count()//2, 1)) as p:
+                with multiprocessing.Pool(multiprocessing.cpu_count()) as p:
                     return p.map(_register_images, [(i1, i2, params) for i1, i2 in zip(im1, im2)])
             except:
                 pass
@@ -248,30 +248,30 @@ def register_images(im1, im2, params=None):
 
 
 @cached(get_aps_data_hdf5, get_candidate_neighbors, subdir='ssd', version=0)
-def get_augmented_aps_segmentation_data(mode):
+def get_augmented_aps_segmentation_data(mode, n_split, split_id):
     if not os.path.exists('done'):
         names, labels, dset_in = dataio.get_data_and_threat_heatmaps(mode)
         n = len(dset_in)
-        n = 32
+        m = int(np.ceil(n/n_split))
+        i1, i2 = split_id*m, (split_id+1)*m
+
         f = h5py.File('data.hdf5', 'w')
         dset = f.create_dataset('dset', (n, 16, 660, 512, 7))
+        neighbors = get_candidate_neighbors(mode, 8)
 
-        batch_size = 8
-        for i in tqdm.trange(0, n, batch_size):
+        for i in tqdm.trange(i1, i2):
+            data = np.rollaxis(dset_in[i], 2, 0)
+            dset[i-i1, ..., 0] = data[..., 0]
+            dset[i-i1, ..., 4:] = data[..., 1:]
+
             im1, im2 = [], []
-            for j in range(i, min(n, i+batch_size)):
-                data = np.rollaxis(dset_in[j], 2, 0)
-                dset[j, ..., 0] = data[..., 0]
-                dset[j, ..., 4:] = data[..., 1:]
-                rot = np.concatenate([data[0:1, :, ::-1, 0], data[-1::-1, :, ::-1, 0]])
-                for k in range(16):
-                    im1.append(rot[k] / rot[k].max())
-                    im2.append(data[k, :, :, 0] / data[k, :, :, 0].max())
+            rot = np.concatenate([data[0:1, :, ::-1, 0], data[-1::-1, :, ::-1, 0]])
+            for j in range(16):
+                im1.append(rot[j] / rot[j].max())
+                im2.append(data[j, :, :, 0] / data[j, :, :, 0].max())
 
             reg = register_images(im1, im2)
-            for j in range(i, min(n, i+batch_size)):
-                for k in range(16):
-                    dset[j, k, ..., 1] = reg[16*(j-i)+k] / reg[16*(j-i)+k].max()
+            dset[i-i1, ..., 1] = reg
 
         with open('pkl', 'wb') as f:
             pickle.dump((names, labels), f)
