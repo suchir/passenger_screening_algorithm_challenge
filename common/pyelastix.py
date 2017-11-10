@@ -304,7 +304,7 @@ def _system3(cmd, verbose=False):
 
     # Set cpu affinity
     pids = subprocess.call(['pgrep', 'elastix'])
-    used_cpus = sum(os.sched_getaffinity(pid) for pid in pids)
+    used_cpus = set.union(*[os.sched_getaffinity(pid) for pid in pids])
     max_cpu = multiprocessing.cpu_count()
     for i in range(max_cpu):
         if i not in used_cpus:
