@@ -303,6 +303,6 @@ def get_augmented_aps_segmentation_data(mode, n_split, split_id):
     else:
         with open('pkl', 'rb') as f:
             names, labels = pickle.load(f)
-        f = h5py.File('data.hdf5')
+        f = h5py.File('data.hdf5', 'r')
         dset = f['dset']
     return names, labels, dset
