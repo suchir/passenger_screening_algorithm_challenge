@@ -68,7 +68,7 @@ def get_passenger_groups(mode):
     return group
 
 
-@cached(get_aps_data_hdf5, version=3)
+@cached(get_aps_data_hdf5, cloud_cache=True, version=3)
 def get_distance_matrix(mode):
     if not os.path.exists('done'):
         batch_size = 32
@@ -136,6 +136,7 @@ def train_clustering_model(mode, duration):
     dmat = (dmat - mean) / tf.sqrt(var)
     labels = tf.reshape(labels_in, [-1])
     logits = tf.squeeze(tf.layers.dense(dmat, 1))
+    logprob = tf.log(tf.sigmoid(logits))
     loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=labels, logits=logits))
 
     optimizer = tf.train.AdamOptimizer(learning_rate=1e-3)
@@ -147,7 +148,7 @@ def train_clustering_model(mode, duration):
     def predict(x):
         with tf.Session() as sess:
             saver.restore(sess, model_path)
-            return sess.run(logits, feed_dict={dmat_in: x})
+            return sess.run(logprob, feed_dict={dmat_in: x})
 
     if os.path.exists('done'):
         return predict
@@ -195,7 +196,7 @@ def get_nearest_neighbors(mode):
     return perm
 
 
-@cached(get_distance_matrix, train_clustering_model, cloud_cache=True, version=0)
+@cached(get_distance_matrix, train_clustering_model, cloud_cache=True, version=1)
 def get_candidate_neighbors(mode, min_neighbors):
     if not os.path.exists('done'):
         dmat = get_distance_matrix(mode)
@@ -262,7 +263,7 @@ def get_augmented_aps_segmentation_data(mode, n_split, split_id):
         names, labels, dset_in = dataio.get_data_and_threat_heatmaps(mode)
         n = len(dset_in)
         m = int(np.ceil(n/n_split))
-        i1, i2 = split_id*m, (split_id+1)*m
+        i1, i2 = split_id*m, min(n, (split_id+1)*m)
         n_neighbor = 8
 
         f = h5py.File('data.hdf5', 'w')
