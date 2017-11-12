@@ -185,7 +185,7 @@ def train_clustering_model(mode, duration):
 def get_nearest_neighbors(mode):
     if not os.path.exists('done'):
         dmat = get_distance_matrix(mode)
-        predict = train_clustering_model('all', 0.25)
+        predict = train_clustering_model('all', 1)
         pmat = np.reshape(predict(dmat), (len(dmat), -1))
         perm = np.argsort(-pmat, axis=1)
 
