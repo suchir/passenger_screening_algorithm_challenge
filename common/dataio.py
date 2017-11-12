@@ -184,7 +184,7 @@ def get_cv_splits(n_split):
     return cv
 
 
-@cached(version=1)
+@cached(version=2)
 def get_data(mode, dtype):
     assert mode in ('sample', 'sample_large', 'all', 'sample_train', 'train', 'sample_valid',
                     'valid', 'sample_test', 'test', 'train-0', 'train-1', 'train-2', 'train-3',
