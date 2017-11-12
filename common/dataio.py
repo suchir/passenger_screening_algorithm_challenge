@@ -191,7 +191,7 @@ def get_data(mode, dtype):
                     'train-4', 'valid-0', 'valid-1', 'valid-2', 'valid-3', 'valid-4')
     assert dtype in ('aps', 'a3daps', 'a3d')
     with read_input_dir('competition_data/%s' % dtype):
-        files = glob.glob('*')
+        files = sorted(glob.glob('*'))
 
     labels = get_train_labels()
     has_label = lambda file: file.split('.')[0] in labels
