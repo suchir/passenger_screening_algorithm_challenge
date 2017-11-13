@@ -136,7 +136,7 @@ def train_clustering_model(mode, duration):
     dmat = (dmat - mean) / tf.sqrt(var)
     labels = tf.reshape(labels_in, [-1])
     logits = tf.squeeze(tf.layers.dense(dmat, 1))
-    logprob = tf.log(tf.sigmoid(logits))
+    logprob = -tf.nn.softplus(-logits)
     loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=labels, logits=logits))
 
     optimizer = tf.train.AdamOptimizer(learning_rate=1e-3)
@@ -168,7 +168,7 @@ def train_clustering_model(mode, duration):
     def train_model(sess, duration):
         t0 = time.time()
         while time.time() - t0 < duration * 3600:
-            sess.run([train_step, logits, loss], feed_dict={
+            sess.run(train_step, feed_dict={
                 dmat_in: dmat_train, labels_in: labels_train
             })
         saver.save(sess, model_path)
@@ -201,7 +201,7 @@ def get_candidate_neighbors(mode, min_neighbors):
     if not os.path.exists('done'):
         dmat = get_distance_matrix(mode)
         n = len(dmat)
-        pmat = np.reshape(train_clustering_model('all', 0.25)(dmat), (n, -1))
+        pmat = np.reshape(train_clustering_model('all', 1)(dmat), (n, -1))
         perm = np.argsort(-pmat, axis=1)
 
         conf = np.zeros(n)
