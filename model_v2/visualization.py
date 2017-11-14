@@ -109,6 +109,23 @@ def write_hourglass_predicted_heatmaps(mode, *args, **kwargs):
                 imageio.imsave('%s_%s.png' % (names[i], j), image)
 
 
+@cached(threat_segmentation_models.train_unet_cnn, subdir='ssd', version=2)
+def write_augmented_hourglass_predicted_heatmaps(mode, *args, **kwargs):
+    predict = threat_segmentation_models.train_augmented_hourglass_cnn(mode, *args, **kwargs)
+
+    valid_mode = mode.replace('train', 'valid')
+    names, _, dset_valid = passenger_clustering.join_augmented_aps_segmentation_data(valid_mode, 6)
+
+    for name, data, (preds, loss) in zip(names, dset_valid, predict(dset_valid)):
+        for i in range(16):
+            image = data[i, ..., 0]
+            image = np.concatenate([image, image, image], axis=-1) / np.max(image)
+            image = np.stack([np.zeros(image.shape), image, np.zeros(image.shape)], axis=-1)
+            image[:, 512:1024, 0] = np.sum(data[i, ..., -3:], axis=-1) / 1000
+            image[:, 1024:, 0] = preds[i, ...]
+            imageio.imsave('%s_%s_%s.png' % (int(loss*1e6), name, i), image)
+
+
 @cached(passenger_clustering.get_distance_matrix, version=0)
 def plot_distance_matrix_accuracy(mode, max_near):
     dmat = passenger_clustering.get_distance_matrix(mode)

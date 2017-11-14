@@ -307,3 +307,29 @@ def get_augmented_aps_segmentation_data(mode, n_split, split_id):
         f = h5py.File('data.hdf5', 'r')
         dset = f['dset']
     return names, labels, dset
+
+
+@cached(get_aps_data_hdf5, get_augmented_aps_segmentation_data, subdir='ssd', cloud_cache=True,
+        version=0)
+def join_augmented_aps_segmentation_data(mode, n_split):
+    if not os.path.exists('done'):
+        names, labels, dset_in = dataio.get_aps_data_hdf5(mode)
+        f = h5py.File('data.hdf5', 'w')
+        dset = f.create_dataset('dset', (len(dset_in), 16, 660, 512, 7))
+
+        i = 0
+        for split_id in tqdm.trange(n_split):
+            _, _, split_dset = get_augmented_aps_segmentation_data(mode, n_split, split_id)
+            for j, data in enumerate(tqdm.tqdm(split_dset)):
+                dset[i] = data
+                i += 1
+
+        with open('pkl', 'wb') as f:
+            pickle.dump((names, labels), f)
+        open('done', 'w').close()
+    else:
+        with open('pkl', 'rb') as f:
+            names, labels = pickle.load(f)
+        f = h5py.File('data.hdf5', 'r')
+        dset = f['dset']
+    return names, labels, dset

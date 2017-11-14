@@ -17,6 +17,114 @@ import random
 import h5py
 
 
+@cached(passenger_clustering.join_augmented_aps_segmentation_data, version=2)
+def train_augmented_hourglass_cnn(mode, duration, learning_rate=1e-3):
+    angles, height, width, res, filters = 16, 660, 512, 512, 7
+
+    tf.reset_default_graph()
+
+    data_in = tf.placeholder(tf.float32, [angles, height, width, filters])
+
+    # random resize
+    size = tf.random_uniform([2], minval=int(0.75*res), maxval=res, dtype=tf.int32)
+    h_pad, w_pad = (res-size[0])//2, (res-size[1])//2
+    padding = [[0, 0], [h_pad, res-size[0]-h_pad], [w_pad, res-size[1]-w_pad]]
+    data = tf.image.resize_images(data_in, size)
+    data = tf.stack([tf.pad(data[..., i], padding) for i in range(filters)], axis=-1)
+
+    # random left-right flip
+    flip_lr = tf.random_uniform([], maxval=2, dtype=tf.int32)
+    data = tf.cond(flip_lr > 0, lambda: data[:, :, ::-1, :], lambda: data)
+
+    # input normalization
+    scale = 10
+    label_fix = 1/1000  # screw-up
+    data = tf.concat([data[..., :-3] * scale, data[..., -3:] * label_fix], axis=-1)
+
+    # hourglass network on first four filters
+    _, logits = tf_models.hourglass_cnn(data[..., :-3], res, 4, res, 64)
+
+    # loss on segmentations
+    labels = tf.reduce_sum(data[..., -3:], axis=-1, keep_dims=True)
+    loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=labels, logits=logits))
+
+    # actual predictions
+    preds = tf.sigmoid(logits)
+    preds = tf.cond(flip_lr > 0, lambda: preds[:, :, ::-1, :], lambda: preds)
+    preds = preds[:, padding[1][0]:-padding[1][1]-1, padding[2][0]:-padding[2][0]-1, :]
+    preds = tf.squeeze(tf.image.resize_images(preds, [height, width]))
+
+    # optimization
+    train_summary = tf.summary.scalar('train_loss', loss)
+    optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
+    train_step = optimizer.minimize(loss)
+
+    saver = tf.train.Saver()
+    model_path = os.getcwd() + '/model.ckpt'
+
+    def predict(dset, n_sample=16):
+        with tf.Session() as sess:
+            saver.restore(sess, model_path)
+            for data in tqdm.tqdm(dset):
+                pred = np.zeros((angles, height, width))
+                mean_loss = 0
+                for _ in range(n_sample):
+                    cur_loss, cur_pred = sess.run([loss, preds], feed_dict={
+                        data_in: data
+                    })
+                    pred += cur_pred
+                    mean_loss += cur_loss
+                yield pred / n_sample, mean_loss / n_sample
+
+    if os.path.exists('done'):
+        return predict
+
+    valid_mode = mode.replace('train', 'valid')
+    _, _, dset_train = passenger_clustering.join_augmented_aps_segmentation_data(mode, 6)
+    _, _, dset_valid = passenger_clustering.join_augmented_aps_segmentation_data(valid_mode, 6)
+
+    with read_log_dir():
+        writer = tf.summary.FileWriter(os.getcwd())
+
+    def eval_model(sess):
+        losses = []
+        for data in tqdm.tqdm(dset_valid):
+            cur_loss = sess.run(loss, feed_dict={
+                data_in: data
+            })
+            losses.append(cur_loss)
+        return np.mean(losses)
+
+    def train_model(sess):
+        it = 0
+        t0 = time.time()
+        best_valid_loss = None
+        while time.time() - t0 < duration * 3600:
+            for data in tqdm.tqdm(dset_train):
+                _, cur_train_summary = sess.run([train_step, train_summary], feed_dict={
+                    data_in: data
+                })
+                writer.add_summary(cur_train_summary, it)
+                it += 1
+
+            valid_loss = eval_model(sess)
+            cur_valid_summary = tf.Summary()
+            cur_valid_summary.value.add(tag='valid_loss', simple_value=valid_loss)
+            writer.add_summary(cur_valid_summary, it)
+
+            if best_valid_loss is None or valid_loss < best_valid_loss:
+                best_valid_loss = valid_loss
+                saver.save(sess, model_path)
+
+    with tf.Session() as sess:
+        sess.run(tf.global_variables_initializer())
+        train_model(sess)
+
+    open('done', 'w').close()
+
+    return predict
+
+
 @cached(passenger_clustering.get_clustered_data_and_threat_heatmaps, version=0)
 def train_hourglass_cnn(mode, duration, cluster_type='groundtruth', learning_rate=1e-3,
                         predict_one=False, lr_decay_tolerance=999, include_reflection=False,
