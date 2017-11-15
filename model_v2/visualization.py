@@ -4,6 +4,7 @@ from common.dataio import get_aps_data_hdf5, get_passenger_clusters
 from . import dataio
 from . import threat_segmentation_models
 from . import passenger_clustering
+from . import body_zone_segmentation
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -14,6 +15,19 @@ import sklearn.cluster
 import sklearn.decomposition
 import os
 import common.pyelastix
+
+
+@cached(body_zone_segmentation.get_a3d_projection_data, version=0)
+def write_a3d_projection_hand_labeling_images(mode):
+    names, _, dset = body_zone_segmentation.get_a3d_projection_data(mode, 95)
+    np.random.seed(0)
+    for name, data in zip(names, tqdm.tqdm(dset)):
+        angle = np.random.randint(16)
+        image = data[angle, ..., 1]
+        image -= image.min()
+        image /= image.max()
+        filename = '%s_%s' % (name, angle)
+        imageio.imsave('%s.png' % filename, image)
 
 
 @cached(get_aps_data_hdf5, version=1)
