@@ -30,7 +30,7 @@ def write_a3d_projection_hand_labeling_images(mode):
         imageio.imsave('%s.png' % filename, image)
 
 
-@cached(body_zone_segmentation.get_a3d_projection_data, cloud_cache=True, version=0)
+@cached(body_zone_segmentation.get_a3d_projection_data, version=0)
 def write_a3d_depth_maps(mode, percentile):
     names, _, dset = body_zone_segmentation.get_a3d_projection_data(mode, percentile)
     np.random.seed(0)
