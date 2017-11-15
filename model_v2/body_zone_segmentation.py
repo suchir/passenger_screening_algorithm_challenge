@@ -16,7 +16,7 @@ import imageio
 import math
 
 
-@cached(get_data, subdir='ssd', cloud_cache=True, version=0)
+@cached(get_data, subdir='ssd', cloud_cache=True, version=1)
 def get_a3d_projection_data(mode, percentile):
     if not os.path.exists('done'):
         angles, width, height = 16, 512, 660
@@ -31,7 +31,8 @@ def get_a3d_projection_data(mode, percentile):
         mean_proj, var_proj = tf.nn.moments(image, axes=[1])
         std_proj = tf.sqrt(var_proj)
 
-        surf = image > tf.reduce_mean(image, axis=1, keep_dims=True)
+        surf = image > tf.contrib.distributions.percentile(image, percentile, axis=1,
+                                                           keep_dims=True)
         dmap = tf.cast(tf.argmax(tf.cast(surf, tf.int32), axis=1) / width, tf.float32)
         proj = tf.image.rot90(tf.stack([dmap, max_proj, mean_proj, std_proj], axis=-1))
         proj = tf.image.resize_images(proj, [height, width])
