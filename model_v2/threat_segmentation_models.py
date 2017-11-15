@@ -18,7 +18,7 @@ import h5py
 
 
 @cached(passenger_clustering.join_augmented_aps_segmentation_data, version=2)
-def train_augmented_hourglass_cnn(mode, duration, learning_rate=1e-3):
+def train_augmented_hourglass_cnn(mode, duration, learning_rate=1e-3, random_scale=False):
     angles, height, width, res, filters = 16, 660, 512, 512, 7
 
     tf.reset_default_graph()
@@ -37,7 +37,10 @@ def train_augmented_hourglass_cnn(mode, duration, learning_rate=1e-3):
     data = tf.cond(flip_lr > 0, lambda: data[:, :, ::-1, :], lambda: data)
 
     # input normalization
-    scale = 10
+    if random_scale:
+        scale = 10 * tf.random_uniform([], minval=0.9, maxval=1.1)
+    else:
+        scale = 10
     label_fix = 1/1000  # screw-up
     data = tf.concat([data[..., :-3] * scale, data[..., -3:] * label_fix], axis=-1)
 
