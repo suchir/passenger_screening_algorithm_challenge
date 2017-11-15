@@ -23,19 +23,18 @@ def get_a3d_projection_data(mode, percentile):
         tf.reset_default_graph()
 
         data_in = tf.placeholder(tf.float32, [width, width, height])
+        angle = tf.placeholder(tf.float32, [])
 
-        projs = []
-        for angle in range(angles):
-            #image = tf.contrib.image.rotate(data_in, 2*math.pi*angle/angles)
-            image = data_in
-            max_proj = tf.reduce_max(image, axis=1)
-            mean_proj, var_proj = tf.nn.moments(image, axes=[1])
-            std_proj = tf.sqrt(var_proj)
+        image = data_in[::2, ::2, ::2]
+        image = tf.contrib.image.rotate(image, 2*math.pi*angle/angles)
+        max_proj = tf.reduce_max(image, axis=1)
+        mean_proj, var_proj = tf.nn.moments(image, axes=[1])
+        std_proj = tf.sqrt(var_proj)
 
-            surf = image > tf.contrib.distributions.percentile(image, percentile, axis=1, keep_dims=True)
-            dmap = tf.cast(tf.argmax(tf.cast(surf, tf.int32), axis=1) / width, tf.float32)
-            projs.append(tf.image.rot90(tf.stack([dmap, max_proj, mean_proj, std_proj], axis=-1)))
-        projs = tf.stack(projs, axis=0)
+        surf = image > tf.reduce_mean(image, axis=1, keep_dims=True)
+        dmap = tf.cast(tf.argmax(tf.cast(surf, tf.int32), axis=1) / width, tf.float32)
+        proj = tf.image.rot90(tf.stack([dmap, max_proj, mean_proj, std_proj], axis=-1))
+        proj = tf.image.resize_images(proj, [height, width])
 
         gen = get_data(mode, 'a3d')
         f = h5py.File('data.hdf5', 'w')
@@ -45,7 +44,8 @@ def get_a3d_projection_data(mode, percentile):
         with tf.Session() as sess:
             sess.run(tf.global_variables_initializer())
             for i, (name, label, data) in enumerate(get_data(mode, 'a3d')):
-                dset[i] = sess.run(projs, feed_dict={data_in: data})
+                for j in tqdm.trange(angles):
+                    dset[i, j] = sess.run(proj, feed_dict={data_in: data, angle: j})
                 names.append(name)
                 labels.append(label)
 
