@@ -26,19 +26,38 @@ def write_a3d_projection_hand_labeling_images(mode):
         image = data[angle, ..., 1]
         image -= image.min()
         image /= image.max()
+        image = np.stack([image, image, image], axis=-1)
         filename = '%s_%s' % (name, angle)
         imageio.imsave('%s.png' % filename, image)
 
 
-@cached(body_zone_segmentation.get_a3d_projection_data, version=0)
+@cached(body_zone_segmentation.get_a3d_projection_data, version=1)
 def write_a3d_depth_maps(mode, percentile):
     names, _, dset = body_zone_segmentation.get_a3d_projection_data(mode, percentile)
     np.random.seed(0)
     for name, data in zip(names, tqdm.tqdm(dset)):
         angle = np.random.randint(16)
-        image = data[angle, ..., 0]
+        norm = lambda x: (x-x.min())/(x.max()-x.min())
+        image = np.concatenate([norm(data[angle, ..., i]) for i in range(4)], axis=1)
         filename = '%s_%s' % (name, angle)
         imageio.imsave('%s.png' % filename, image)
+
+
+@cached(body_zone_segmentation.train_mask_segmentation_cnn,
+        body_zone_segmentation.get_a3d_projection_data, version=3)
+def write_predicted_masks(mode, *args, **kwargs):
+    names, _, dset = body_zone_segmentation.get_a3d_projection_data(mode, 97)
+    predict = body_zone_segmentation.train_mask_segmentation_cnn(*args, **kwargs)
+
+    for name, data, masks in zip(names, dset, predict(dset)):
+        for angle in range(16):
+            dmap = data[angle, ..., 0] * masks[angle] + (1 - masks[angle])
+            image = data[angle, ..., 1]
+            image -= image.min()
+            image /= image.max()
+            image = np.concatenate([dmap, image], axis=1)
+            filename = '%s_%s' % (name, angle)
+            imageio.imsave('%s.png' % filename, image)
 
 
 @cached(get_aps_data_hdf5, version=1)
