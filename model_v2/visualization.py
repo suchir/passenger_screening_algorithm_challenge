@@ -9,12 +9,45 @@ from . import body_zone_segmentation
 import matplotlib.pyplot as plt
 import numpy as np
 import skimage.io
+import skimage.measure
 import tqdm
 import imageio
 import sklearn.cluster
 import sklearn.decomposition
 import os
 import common.pyelastix
+
+
+@cached(dataio.get_data_and_threat_heatmaps, version=1)
+def write_com_of_threats(mode):
+    names, labels, dset = dataio.get_data_and_threat_heatmaps(mode)
+
+    def get_threat_com(hmap):
+        ret = np.zeros(hmap.shape)
+        if not np.any(hmap):
+            return ret
+        M = skimage.measure.moments(hmap.astype(np.double))
+        ci, cj = int(M[0, 1] / M[0, 0]), int(M[1, 0] / M[0, 0])
+        r = 2
+        ret[ci-r:ci+r+1, cj-r:cj+r+1] = 1
+        return ret
+
+    for i in range(17):
+        for j in range(16):
+            if not os.path.exists('%s/%s' % (i+1, j)):
+                os.makedirs('%s/%s' % (i+1, j))
+    for name, label, data in zip(names, labels, tqdm.tqdm(dset)):
+        for i in range(17):
+            for j in range(16):
+                if not label[i]:
+                    continue
+                image = data[..., j, 0]
+                image /= image.max()
+                hmap = get_threat_com(data[..., j, 1]) + \
+                       get_threat_com(data[..., j, 2]) + \
+                       get_threat_com(data[..., j, 3])
+                out = np.stack([hmap, image, np.zeros(image.shape)], axis=-1)
+                imageio.imsave('%s/%s/%s.png' % (i+1, j, name), out)
 
 
 @cached(body_zone_segmentation.get_a3d_projection_data, version=0)
@@ -44,14 +77,14 @@ def write_a3d_depth_maps(mode, percentile):
 
 
 @cached(body_zone_segmentation.train_mask_segmentation_cnn,
-        body_zone_segmentation.get_a3d_projection_data, version=3)
+        body_zone_segmentation.get_a3d_projection_data, version=5)
 def write_predicted_masks(mode, *args, **kwargs):
     names, _, dset = body_zone_segmentation.get_a3d_projection_data(mode, 97)
     predict = body_zone_segmentation.train_mask_segmentation_cnn(*args, **kwargs)
 
     for name, data, masks in zip(names, dset, predict(dset)):
         for angle in range(16):
-            dmap = data[angle, ..., 0] * masks[angle] + (1 - masks[angle])
+            dmap = data[angle, ..., 0] * (masks[angle] > 0.5) * 2 + (1 - (masks[angle] > 0.5))
             image = data[angle, ..., 1]
             image -= image.min()
             image /= image.max()

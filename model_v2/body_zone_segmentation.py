@@ -3,6 +3,7 @@ from common.dataio import get_aps_data_hdf5, get_passenger_clusters, get_data
 
 from . import dataio
 from . import tf_models
+from . import synthetic_data
 
 import tensorflow as tf
 import matplotlib.pyplot as plt
@@ -204,3 +205,91 @@ def train_mask_segmentation_cnn(duration, learning_rate=1e-3, model='logistic', 
     open('done', 'w').close()
 
     return predict
+
+
+@cached(train_mask_segmentation_cnn, get_a3d_projection_data, subdir='ssd', version=0)
+def get_depth_maps(mode):
+    if not os.path.exists('done'):
+        names, labels, dset_in = get_a3d_projection_data(mode, 97)
+        predict = train_mask_segmentation_cnn(0.1, model='hourglass', num_filters=64)
+
+        f = h5py.File('data.hdf5', 'w')
+        dset = f.create_dataset('dset', dset_in.shape[:-1])
+
+        for i, (data, mask) in enumerate(zip(dset_in, predict(dset_in))):
+            dset[i] = data[..., 0] * (mask > 0.5) * 2 + (mask <= 0.5)
+
+        with open('pkl', 'wb') as f:
+            pickle.dump((names, labels), f)
+        open('done', 'w').close()
+    else:
+        with open('pkl', 'rb') as f:
+            names, labels = pickle.load(f)
+        f = h5py.File('data.hdf5', 'r')
+        dset = f['dset']
+    return names, labels, dset
+
+
+@cached(synthetic_data.render_synthetic_zone_data, get_depth_maps, subdir='ssd', version=1)
+def get_normalized_synthetic_zone_data(mode):
+    if not os.path.exists('done'):
+        _, _, dset_in = get_depth_maps(mode)
+        dset = synthetic_data.render_synthetic_zone_data(mode)
+        f = h5py.File('data.hdf5', 'w')
+        dset_out = f.create_dataset('dset', dset.shape)
+
+        def corners(image):
+            coords = np.argwhere(image < 1)
+            return np.min(coords, axis=0), np.max(coords, axis=0)
+
+        def stats(image):
+            (x0, y0), (x1, y1) = corners(image)
+            valid = image[image < 1]
+            mean, std = np.mean(valid), np.std(valid)
+            return x1-x0, y1-y0, mean, std
+
+        def distributions(gen):
+            all_stats = [stats(data) for data in gen]
+            h, w = [x[0] for x in all_stats], [x[1] for x in all_stats]
+            mean_h, std_h = np.mean(h), np.std(h)
+            mean_w, std_w = np.mean(w), np.std(w)
+            mean_v = np.mean([x[2] for x in all_stats])
+            std_v = np.sqrt(np.sum([x[3]**2 for x in all_stats]))
+            return np.array([
+                [mean_h, std_h],
+                [mean_w, std_w],
+                [mean_v, std_v]
+            ])
+
+        def dset_in_gen(angle):
+            for data in dset_in:
+                yield data[angle]
+
+        def dset_gen(angle):
+            for data in dset:
+                yield data[angle, ..., 0]
+
+        for angle in tqdm.trange(16):
+            distr_in = distributions(dset_in_gen(angle))
+            distr = distributions(dset_gen(angle))
+
+            for i in tqdm.trange(len(dset)):
+                (x0, y0), (x1, y1) = corners(dset[i, angle, ..., 0])
+                crop = dset[i, angle, x0:x1, y0:y1, ..., 0]
+                h, w = crop.shape[-2:]
+
+                hz, wz = (h-distr[0, 0])/distr[0, 1], (w-distr[1, 0])/distr[1, 1]
+                hp, wp = hz*distr_in[0, 1]+distr_in[0, 0], wz*distr_in[1, 1]+distr_in[1, 0]
+
+                resized = skimage.transform.resize(crop, (int(hp), int(wp)))
+                resized = resized[1:-1, 1:-1]
+                h_pad, w_pad = 330-resized.shape[0], (256-resized.shape[1])//2
+                normal = np.pad(resized, ((h_pad, 0), (w_pad, 256-resized.shape[1]-w_pad)),
+                                'constant', constant_values=1)
+                dset_out[i, angle, ..., 0] = normal
+
+        open('done', 'w').close()
+    else:
+        f = h5py.File('data.hdf5', 'r')
+        dset_out = f['dset']
+    return dset_out
