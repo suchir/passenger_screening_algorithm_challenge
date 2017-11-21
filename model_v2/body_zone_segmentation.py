@@ -207,7 +207,8 @@ def train_mask_segmentation_cnn(duration, learning_rate=1e-3, model='logistic', 
     return predict
 
 
-@cached(train_mask_segmentation_cnn, get_a3d_projection_data, subdir='ssd', version=0)
+@cached(train_mask_segmentation_cnn, get_a3d_projection_data, cloud_cache=True,
+        subdir='ssd', version=0)
 def get_depth_maps(mode):
     if not os.path.exists('done'):
         names, labels, dset_in = get_a3d_projection_data(mode, 97)
@@ -230,7 +231,7 @@ def get_depth_maps(mode):
     return names, labels, dset
 
 
-@cached(synthetic_data.render_synthetic_zone_data, get_depth_maps, subdir='ssd', version=1)
+@cached(synthetic_data.render_synthetic_zone_data, get_depth_maps, subdir='ssd', version=3)
 def get_normalized_synthetic_zone_data(mode):
     if not os.path.exists('done'):
         _, _, dset_in = get_depth_maps(mode)
@@ -275,21 +276,30 @@ def get_normalized_synthetic_zone_data(mode):
 
             for i in tqdm.trange(len(dset)):
                 (x0, y0), (x1, y1) = corners(dset[i, angle, ..., 0])
-                crop = dset[i, angle, x0:x1, y0:y1, ..., 0]
-                h, w = crop.shape[-2:]
+                crop = dset[i, angle, x0:x1, y0:y1]
+                h, w = crop.shape[:2]
 
                 hz, wz = (h-distr[0, 0])/distr[0, 1], (w-distr[1, 0])/distr[1, 1]
                 hp, wp = hz*distr_in[0, 1]+distr_in[0, 0], wz*distr_in[1, 1]+distr_in[1, 0]
-
-                resized = skimage.transform.resize(crop, (int(hp), int(wp)))
+                resized = skimage.transform.resize(crop, (int(hp), int(wp)), preserve_range=True)
                 resized = resized[1:-1, 1:-1]
                 h_pad, w_pad = 330-resized.shape[0], (256-resized.shape[1])//2
-                normal = np.pad(resized, ((h_pad, 0), (w_pad, 256-resized.shape[1]-w_pad)),
-                                'constant', constant_values=1)
-                dset_out[i, angle, ..., 0] = normal
+                normal = np.stack([
+                    np.pad(x, ((h_pad, 0), (w_pad, 256-resized.shape[1]-w_pad)), 'constant',
+                           constant_values=y)
+                    for x, y in [(resized[..., 0], 1), (resized[..., 1], 0)]
+                ], axis=-1)
+
+                depth = normal[..., 0]
+                valid = depth < 1
+                depth[valid] = (depth[valid]-distr[2, 0])/distr[2, 1]*distr_in[2, 1]+distr_in[2, 0]
+                normal[..., 0] = depth
+
+                dset_out[i, angle] = normal
 
         open('done', 'w').close()
     else:
         f = h5py.File('data.hdf5', 'r')
         dset_out = f['dset']
     return dset_out
+                                   
