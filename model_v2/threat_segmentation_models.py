@@ -17,7 +17,7 @@ import random
 import h5py
 
 
-@cached(passenger_clustering.join_augmented_aps_segmentation_data, version=2)
+@cached(passenger_clustering.join_augmented_aps_segmentation_data, cloud_cache=True, version=2)
 def train_augmented_hourglass_cnn(mode, duration, learning_rate=1e-3, random_scale=False,
                                   drop_loss=0):
     angles, height, width, res, filters = 16, 660, 512, 512, 7
