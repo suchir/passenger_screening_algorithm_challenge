@@ -18,7 +18,8 @@ import h5py
 
 
 @cached(passenger_clustering.join_augmented_aps_segmentation_data, version=2)
-def train_augmented_hourglass_cnn(mode, duration, learning_rate=1e-3, random_scale=False):
+def train_augmented_hourglass_cnn(mode, duration, learning_rate=1e-3, random_scale=False,
+                                  drop_loss=0):
     angles, height, width, res, filters = 16, 660, 512, 512, 7
 
     tf.reset_default_graph()
@@ -48,8 +49,21 @@ def train_augmented_hourglass_cnn(mode, duration, learning_rate=1e-3, random_sca
     _, logits = tf_models.hourglass_cnn(data[..., :-3], res, 4, res, 64)
 
     # loss on segmentations
-    labels = tf.reduce_sum(data[..., -3:], axis=-1, keep_dims=True)
-    loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=labels, logits=logits))
+    if drop_loss:
+        pos_loss = []
+        for i in range(3):
+            cur_labels = tf.expand_dims(data[..., -i-1], -1)
+            cur_loss = tf.nn.sigmoid_cross_entropy_with_logits(labels=cur_labels, logits=logits)
+            angle_loss = tf.reduce_sum(tf.reshape(cur_loss*cur_labels, [angles, -1]), axis=-1)
+            top_n, _ = tf.nn.top_k(angle_loss, k=drop_loss)
+            pos_loss.append(tf.reduce_sum(angle_loss) - tf.reduce_sum(top_n))
+        labels = tf.reduce_sum(data[..., -3:], axis=-1, keep_dims=True)
+        neg_loss = tf.reduce_sum(tf.nn.sigmoid_cross_entropy_with_logits(labels=labels,
+                                                                         logits=logits)*(1-labels))
+        loss = (tf.add_n(pos_loss) + neg_loss) / tf.cast(tf.size(logits), tf.float32)
+    else:
+        labels = tf.reduce_sum(data[..., -3:], axis=-1, keep_dims=True)
+        loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=labels, logits=logits))
 
     # actual predictions
     preds = tf.sigmoid(logits)
