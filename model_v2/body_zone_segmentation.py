@@ -304,3 +304,91 @@ def get_normalized_synthetic_zone_data(mode):
         f = h5py.File('data.hdf5', 'r')
         dset_out = f['dset']
     return dset_out
+
+
+@cached(get_normalized_synthetic_zone_data, version=0)
+def train_zone_segmentation_cnn(mode, duration, learning_rate=1e-3, stretch_amount=0.25):
+    angles, height, width, res, zones = 16, 330, 256, 256, 18
+    tf.reset_default_graph()
+
+    data_in = tf.placeholder(tf.float32, [1, height, width, 2])
+    angle = tf.placeholder(tf.int32, [])
+
+    # random resize
+    size = tf.random_uniform([2], minval=int((1-stretch_amount)*res), maxval=res, dtype=tf.int32)
+    h_pad, w_pad = (res-size[0])//2, (res-size[1])//2
+    padding = [[0, 0], [h_pad, res-size[0]-h_pad], [w_pad, res-size[1]-w_pad]]
+    data = tf.image.resize_images(data_in, size, method=tf.image.ResizeMethod.NEAREST_NEIGHBOR)
+    data = tf.stack([tf.pad(data[..., i], padding) for i in range(2)], axis=-1)
+
+    _, logits = tf_models.hourglass_cnn(data[..., :1], res, 4, res, 64, num_output=angles*zones)
+    logits = tf.reshape(logits, [1, res, res, angles, zones])
+    logits = logits[..., angle, :]
+
+    # segmentation logloss
+    loss = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=tf.cast(data[..., 1], tf.int32),
+                                                          logits=logits)
+    loss = tf.reduce_mean(loss)
+
+    # actual predictions
+    preds = tf.sigmoid(logits)
+    preds = preds[:, padding[1][0]:-padding[1][1]-1, padding[2][0]:-padding[2][0]-1, :]
+    preds = tf.image.resize_images(preds, [height, width])
+
+    # optimization
+    optimizer = tf.train.AdamOptimizer(learning_rate=1e-3)
+    train_step = optimizer.minimize(loss)
+    train_summary = tf.summary.scalar('train_loss', loss)
+
+    saver = tf.train.Saver()
+    model_path = os.getcwd() + '/model.ckpt'
+
+    def predict(gen, n_sample=64):
+        with tf.Session() as sess:
+            saver.restore(sess, model_path)
+            for cur_data in gen:
+                ret = np.zeros((angles, height, width, zones))
+                for i in range(angles):
+                    for _ in range(n_sample):
+                        feed_data = np.stack([cur_data[i:i+1], np.zeros((1,)+cur_data.shape[1:])],
+                                             axis=-1)
+                        ret[i:i+1] += sess.run(preds, feed_dict={
+                            data_in: feed_data,
+                            angle: i
+                        })
+                yield np.argmax(ret, axis=-1)
+
+    if os.path.exists('done'):
+        return predict
+
+    dset_all = get_normalized_synthetic_zone_data(mode)
+
+    with read_log_dir():
+        writer = tf.summary.FileWriter(os.getcwd())
+
+    def batch_gen(dset):
+        for data in tqdm.tqdm(dset):
+            for i in range(16):
+                yield data[i:i+1], i
+
+    def train_model(sess):
+        it = 0
+        t0 = time.time()
+        while time.time() - t0 < duration * 3600:
+            for cur_data, cur_angle in batch_gen(dset_all):
+                _, cur_train_summary = sess.run([train_step, train_summary], feed_dict={
+                    data_in: cur_data,
+                    angle: cur_angle
+                })
+                writer.add_summary(cur_train_summary, it)
+                it += 1
+
+            saver.save(sess, model_path)
+
+    with tf.Session() as sess:
+        sess.run(tf.global_variables_initializer())
+        train_model(sess)
+
+    open('done', 'w').close()
+
+    return predict

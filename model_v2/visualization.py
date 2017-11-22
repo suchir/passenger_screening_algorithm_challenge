@@ -5,6 +5,7 @@ from . import dataio
 from . import threat_segmentation_models
 from . import passenger_clustering
 from . import body_zone_segmentation
+from . import synthetic_data
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -16,6 +17,44 @@ import sklearn.cluster
 import sklearn.decomposition
 import os
 import common.pyelastix
+
+
+@cached(body_zone_segmentation.get_normalized_synthetic_zone_data,
+        body_zone_segmentation.train_zone_segmentation_cnn,
+        body_zone_segmentation.get_depth_maps, version=2)
+def write_body_zone_predictions(mode, *args, **kwargs):
+    dset_fake = body_zone_segmentation.get_normalized_synthetic_zone_data(mode)
+    _, _, dset_real = body_zone_segmentation.get_depth_maps(mode)
+    predict = body_zone_segmentation.train_zone_segmentation_cnn(*args, **kwargs)
+    def data_gen():
+        for real, fake in zip(dset_real, dset_fake):
+            yield real
+            yield fake[..., 0]
+    pred_gen = predict(data_gen())
+
+    for i, (real, fake) in enumerate(zip(tqdm.tqdm(dset_real), dset_fake)):
+        real_pred = next(pred_gen)
+        fake_pred = next(pred_gen)
+        for j in range(16):
+            norm = lambda x: (x-x.min())/(x.max()-x.min())
+            gt = synthetic_data.BODY_ZONE_COLORS[fake[j, ..., 1].astype('int32')]
+            pf = synthetic_data.BODY_ZONE_COLORS[fake_pred[j].astype('int32')]
+            df = norm(np.stack([fake[j, ..., 0] for _ in range(3)], axis=-1)) * 255
+            pr = synthetic_data.BODY_ZONE_COLORS[real_pred[j].astype('int32')]
+            dr = norm(np.stack([real[j] for _ in range(3)], axis=-1)) * 255
+            image = np.concatenate([df, gt, pf, dr, pr], axis=1)
+            imageio.imsave('%s_%s.png' % (i, j), image)
+
+
+@cached(body_zone_segmentation.get_normalized_synthetic_zone_data,
+        body_zone_segmentation.get_depth_maps, version=0)
+def write_real_and_synthetic_data(mode):
+    _, _, dset_real = body_zone_segmentation.get_depth_maps(mode)
+    dset_fake = body_zone_segmentation.get_normalized_synthetic_zone_data(mode)
+    for i, (real, fake) in enumerate(zip(dset_real, dset_fake)):
+        for j in range(16):
+            image = np.concatenate([real[j], fake[j, ..., 0]], axis=1)
+            imageio.imsave('%s_%s.png' % (i, j), image)
 
 
 @cached(dataio.get_data_and_threat_heatmaps, version=1)
