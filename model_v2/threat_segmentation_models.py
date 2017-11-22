@@ -19,7 +19,7 @@ import h5py
 
 @cached(passenger_clustering.join_augmented_aps_segmentation_data, cloud_cache=True, version=2)
 def train_augmented_hourglass_cnn(mode, duration, learning_rate=1e-3, random_scale=False,
-                                  drop_loss=0):
+                                  drop_loss=0, downsample=True):
     angles, height, width, res, filters = 16, 660, 512, 512, 7
 
     tf.reset_default_graph()
@@ -46,7 +46,7 @@ def train_augmented_hourglass_cnn(mode, duration, learning_rate=1e-3, random_sca
     data = tf.concat([data[..., :-3] * scale, data[..., -3:] * label_fix], axis=-1)
 
     # hourglass network on first four filters
-    _, logits = tf_models.hourglass_cnn(data[..., :-3], res, 4, res, 64)
+    _, logits = tf_models.hourglass_cnn(data[..., :-3], res, 4, res, 64, downsample=downsample)
 
     # loss on segmentations
     if drop_loss:
