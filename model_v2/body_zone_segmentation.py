@@ -231,7 +231,8 @@ def get_depth_maps(mode):
     return names, labels, dset
 
 
-@cached(synthetic_data.render_synthetic_zone_data, get_depth_maps, subdir='ssd', version=3)
+@cached(synthetic_data.render_synthetic_zone_data, get_depth_maps, cloud_cache=True, subdir='ssd',
+        version=3)
 def get_normalized_synthetic_zone_data(mode):
     if not os.path.exists('done'):
         _, _, dset_in = get_depth_maps(mode)
@@ -263,11 +264,11 @@ def get_normalized_synthetic_zone_data(mode):
             ])
 
         def dset_in_gen(angle):
-            for data in dset_in:
+            for data in tqdm.tqdm(dset_in):
                 yield data[angle]
 
         def dset_gen(angle):
-            for data in dset:
+            for data in tqdm.tqdm(dset):
                 yield data[angle, ..., 0]
 
         for angle in tqdm.trange(16):
@@ -281,7 +282,8 @@ def get_normalized_synthetic_zone_data(mode):
 
                 hz, wz = (h-distr[0, 0])/distr[0, 1], (w-distr[1, 0])/distr[1, 1]
                 hp, wp = hz*distr_in[0, 1]+distr_in[0, 0], wz*distr_in[1, 1]+distr_in[1, 0]
-                resized = skimage.transform.resize(crop, (int(hp), int(wp)), preserve_range=True)
+                resized = skimage.transform.resize(crop, (min(330, int(hp)), min(256, int(wp))),
+                                                   preserve_range=True)
                 resized = resized[1:-1, 1:-1]
                 h_pad, w_pad = 330-resized.shape[0], (256-resized.shape[1])//2
                 normal = np.stack([
@@ -302,4 +304,3 @@ def get_normalized_synthetic_zone_data(mode):
         f = h5py.File('data.hdf5', 'r')
         dset_out = f['dset']
     return dset_out
-                                   
