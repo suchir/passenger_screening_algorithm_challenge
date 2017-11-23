@@ -307,7 +307,8 @@ def get_normalized_synthetic_zone_data(mode):
 
 
 @cached(get_normalized_synthetic_zone_data, version=0)
-def train_zone_segmentation_cnn(mode, duration, learning_rate=1e-3, stretch_amount=0.25):
+def train_zone_segmentation_cnn(mode, duration, learning_rate=1e-3, stretch_amount=0.25,
+                                random_shift=0, random_scale=0, random_noise_z=None):
     angles, height, width, res, zones = 16, 330, 256, 256, 18
     tf.reset_default_graph()
 
@@ -319,8 +320,22 @@ def train_zone_segmentation_cnn(mode, duration, learning_rate=1e-3, stretch_amou
     h_pad, w_pad = (res-size[0])//2, (res-size[1])//2
     padding = [[0, 0], [h_pad, res-size[0]-h_pad], [w_pad, res-size[1]-w_pad]]
     data = tf.image.resize_images(data_in, size, method=tf.image.ResizeMethod.NEAREST_NEIGHBOR)
-    data = tf.stack([tf.pad(data[..., i], padding) for i in range(2)], axis=-1)
+    data = tf.stack([tf.pad(data[..., x], padding, constant_values=y) for x, y in [(0, 1), (1, 0)]], 
+                    axis=-1)
+    image, label = data[..., 0], data[..., 1]
 
+    # add random noise
+    if random_noise_z is not None:
+        image = tf.minimum(image, tf_models.random_uniform_noise(res, random_noise_z, 1))
+        image = tf.maximum(image, tf_models.random_uniform_noise(res, random_noise_z, 0))
+
+    # random scale values
+    image = image*tf.random_uniform([], 1-random_scale, 1+random_scale) + \
+            tf.random_uniform([], -random_shift, random_shift)
+
+    data = tf.stack([image, label], axis=-1)
+
+    # get logits
     _, logits = tf_models.hourglass_cnn(data[..., :1], res, 4, res, 64, num_output=angles*zones)
     logits = tf.reshape(logits, [1, res, res, angles, zones])
     logits = logits[..., angle, :]
@@ -333,7 +348,7 @@ def train_zone_segmentation_cnn(mode, duration, learning_rate=1e-3, stretch_amou
     # actual predictions
     preds = tf.sigmoid(logits)
     preds = preds[:, padding[1][0]:-padding[1][1]-1, padding[2][0]:-padding[2][0]-1, :]
-    preds = tf.image.resize_images(preds, [height, width])
+    preds = tf.image.resize_images(preds, [2*height, 2*width])
 
     # optimization
     optimizer = tf.train.AdamOptimizer(learning_rate=1e-3)
@@ -347,7 +362,7 @@ def train_zone_segmentation_cnn(mode, duration, learning_rate=1e-3, stretch_amou
         with tf.Session() as sess:
             saver.restore(sess, model_path)
             for cur_data in gen:
-                ret = np.zeros((angles, height, width, zones))
+                ret = np.zeros((angles, 2*height, 2*width, zones))
                 for i in range(angles):
                     for _ in range(n_sample):
                         feed_data = np.stack([cur_data[i:i+1], np.zeros((1,)+cur_data.shape[1:])],
@@ -356,7 +371,7 @@ def train_zone_segmentation_cnn(mode, duration, learning_rate=1e-3, stretch_amou
                             data_in: feed_data,
                             angle: i
                         })
-                yield np.argmax(ret, axis=-1)
+                yield ret / n_sample
 
     if os.path.exists('done'):
         return predict
@@ -392,3 +407,26 @@ def train_zone_segmentation_cnn(mode, duration, learning_rate=1e-3, stretch_amou
     open('done', 'w').close()
 
     return predict
+
+
+@cached(train_zone_segmentation_cnn, get_depth_maps, version=0)
+def get_body_zones(mode):
+    if not os.path.exists('done'):
+        names, labels, dset_in = get_depth_maps(mode)
+        predict = train_zone_segmentation_cnn('all', 0.25, stretch_amount=0.75, random_shift=0.5,
+                                              random_scale=0.5, random_noise_z=1)
+        f = h5py.File('data.hdf5', 'w')
+        dset = f.create_dataset('dset', (len(dset_in), 16, 660, 512, 18))
+
+        for i, pred in enumerate(predict(tqdm.tqdm(dset_in), 10)):
+            dset[i] = pred
+
+        with open('pkl', 'wb') as f:
+            pickle.dump((names, labels), f)
+        open('done', 'w').close()
+    else:
+        with open('pkl', 'rb') as f:
+            names, labels = pickle.load(f)
+        f = h5py.File('data.hdf5', 'r')
+        dset = f['dset']
+    return names, labels, dset

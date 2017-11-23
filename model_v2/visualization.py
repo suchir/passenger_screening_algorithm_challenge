@@ -21,8 +21,8 @@ import common.pyelastix
 
 @cached(body_zone_segmentation.get_normalized_synthetic_zone_data,
         body_zone_segmentation.train_zone_segmentation_cnn,
-        body_zone_segmentation.get_depth_maps, version=2)
-def write_body_zone_predictions(mode, *args, **kwargs):
+        body_zone_segmentation.get_depth_maps, version=3)
+def write_body_zone_predictions(mode, n_sample, *args, **kwargs):
     dset_fake = body_zone_segmentation.get_normalized_synthetic_zone_data(mode)
     _, _, dset_real = body_zone_segmentation.get_depth_maps(mode)
     predict = body_zone_segmentation.train_zone_segmentation_cnn(*args, **kwargs)
@@ -30,11 +30,12 @@ def write_body_zone_predictions(mode, *args, **kwargs):
         for real, fake in zip(dset_real, dset_fake):
             yield real
             yield fake[..., 0]
-    pred_gen = predict(data_gen())
+    pred_gen = predict(data_gen(), n_sample)
 
     for i, (real, fake) in enumerate(zip(tqdm.tqdm(dset_real), dset_fake)):
-        real_pred = next(pred_gen)
-        fake_pred = next(pred_gen)
+        real_pred, fake_pred = next(pred_gen), next(pred_gen)
+        real_pred, fake_pred = np.argmax(real_pred, axis=-1), np.argmax(fake_pred, axis=-1)
+        real_pred, fake_pred = real_pred[:, ::2, ::2], fake_pred[:, ::2, ::2]
         for j in range(16):
             norm = lambda x: (x-x.min())/(x.max()-x.min())
             gt = synthetic_data.BODY_ZONE_COLORS[fake[j, ..., 1].astype('int32')]

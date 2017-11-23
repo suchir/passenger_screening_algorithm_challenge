@@ -1,4 +1,5 @@
 import tensorflow as tf
+import numpy as np
 
 
 def unet_cnn(x, in_res, min_res, out_res, init_filters, conv3d=False):
@@ -88,3 +89,17 @@ def hourglass_cnn(x, in_res, min_res, out_res, num_filters, num_output=1, downsa
     y = tf.layers.conv2d(x, num_output, 1, 1)
     y = tf.image.resize_images(y, [out_res, out_res])
     return x, y
+
+
+def random_uniform_noise(res, z, default):
+    noise = tf.Variable(np.zeros((res, res)), dtype=tf.float32)
+    cur_res = res
+    while cur_res > 0:
+        cur_noise = tf.random_uniform([cur_res, cur_res, 1], 0, 1, tf.float32)
+        noise += tf.squeeze(tf.image.resize_images(cur_noise, (res, res)))
+        cur_res //= 2
+    mean, var = tf.nn.moments(noise, axes=(0, 1))
+    noise = (noise - mean)/tf.sqrt(var)
+    mask = tf.cast(noise > z, tf.float32)
+    noise =  mask*tf.random_uniform([], 0, 1) + (1-mask)*default
+    return noise
