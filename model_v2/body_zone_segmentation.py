@@ -306,7 +306,7 @@ def get_normalized_synthetic_zone_data(mode):
     return dset_out
 
 
-@cached(get_normalized_synthetic_zone_data, version=0)
+@cached(get_normalized_synthetic_zone_data, cloud_cache=True, version=0)
 def train_zone_segmentation_cnn(mode, duration, learning_rate=1e-3, stretch_amount=0.25,
                                 random_shift=0, random_scale=0, random_noise_z=None):
     angles, height, width, res, zones = 16, 330, 256, 256, 18
@@ -409,12 +409,12 @@ def train_zone_segmentation_cnn(mode, duration, learning_rate=1e-3, stretch_amou
     return predict
 
 
-@cached(train_zone_segmentation_cnn, get_depth_maps, version=0)
+@cached(train_zone_segmentation_cnn, get_depth_maps, version=1)
 def get_body_zones(mode):
     if not os.path.exists('done'):
         names, labels, dset_in = get_depth_maps(mode)
-        predict = train_zone_segmentation_cnn('all', 0.25, stretch_amount=0.75, random_shift=0.5,
-                                              random_scale=0.5, random_noise_z=1)
+        predict = train_zone_segmentation_cnn('all', 1, stretch_amount=0.25, random_shift=0.5,
+                                              random_scale=0.5, random_noise_z=0)
         f = h5py.File('data.hdf5', 'w')
         dset = f.create_dataset('dset', (len(dset_in), 16, 660, 512, 18))
 

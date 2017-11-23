@@ -19,6 +19,31 @@ import os
 import common.pyelastix
 
 
+@cached(body_zone_segmentation.get_body_zones, dataio.get_data_and_threat_heatmaps, version=0)
+def write_body_zone_errors(mode):
+    names, labels, dset = dataio.get_data_and_threat_heatmaps(mode)
+    names2, _, zones = body_zone_segmentation.get_body_zones(mode)
+    assert names == names2
+    for name, label, data, zone in zip(names, labels, tqdm.tqdm(dset), zones):
+        label = [i for i in range(len(label)) if label[i]]
+        for i in range(16):
+            z = np.argmax(zone[i], axis=-1)
+            for j in range(3):
+                hmap = data[..., i, 1+j]
+                if not np.any(hmap):
+                    continue
+                M = skimage.measure.moments(hmap.astype(np.double))
+                ci, cj = int(M[0, 1] / M[0, 0]), int(M[1, 0] / M[0, 0])
+                if z[ci, cj] != 0 and z[ci, cj] != label[j] + 1:
+                    colors = synthetic_data.BODY_ZONE_COLORS[z] / 255
+                    body = np.stack([data[..., i, 0] for _ in range(3)], axis=-1)
+                    body -= body.min()
+                    body /= body.max()
+                    image = np.concatenate([body, colors], axis=1)
+                    image[ci-2:ci+3, cj-2:cj+3, 0] = 1
+                    imageio.imsave('%s_%s_%s.png' % (name, label[j]+1, z[ci, cj]), image)
+
+
 @cached(body_zone_segmentation.get_normalized_synthetic_zone_data,
         body_zone_segmentation.train_zone_segmentation_cnn,
         body_zone_segmentation.get_depth_maps, version=3)
