@@ -19,15 +19,17 @@ import os
 import common.pyelastix
 
 
-@cached(body_zone_segmentation.get_body_zones, dataio.get_data_and_threat_heatmaps, version=0)
-def write_body_zone_errors(mode):
+@cached(body_zone_segmentation.train_zone_segmentation_cnn, dataio.get_data_and_threat_heatmaps,
+        body_zone_segmentation.get_depth_maps, version=1)
+def write_body_zone_errors(mode, *args, **kwargs):
     names, labels, dset = dataio.get_data_and_threat_heatmaps(mode)
-    names2, _, zones = body_zone_segmentation.get_body_zones(mode)
-    assert names == names2
-    for name, label, data, zone in zip(names, labels, tqdm.tqdm(dset), zones):
+    _, _, dmap = body_zone_segmentation.get_depth_maps(mode)
+    predict = body_zone_segmentation.train_zone_segmentation_cnn(*args, **kwargs)
+    for name, label, data, zone in zip(names, labels, tqdm.tqdm(dset), predict(dmap, 16)):
         label = [i for i in range(len(label)) if label[i]]
         for i in range(16):
-            z = np.argmax(zone[i], axis=-1)
+            z = skimage.transform.resize(zone[i], (660, 512))
+            z = np.argmax(z, axis=-1)
             for j in range(3):
                 hmap = data[..., i, 1+j]
                 if not np.any(hmap):
@@ -60,7 +62,6 @@ def write_body_zone_predictions(mode, n_sample, *args, **kwargs):
     for i, (real, fake) in enumerate(zip(tqdm.tqdm(dset_real), dset_fake)):
         real_pred, fake_pred = next(pred_gen), next(pred_gen)
         real_pred, fake_pred = np.argmax(real_pred, axis=-1), np.argmax(fake_pred, axis=-1)
-        real_pred, fake_pred = real_pred[:, ::2, ::2], fake_pred[:, ::2, ::2]
         for j in range(16):
             norm = lambda x: (x-x.min())/(x.max()-x.min())
             gt = synthetic_data.BODY_ZONE_COLORS[fake[j, ..., 1].astype('int32')]
