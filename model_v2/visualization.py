@@ -20,7 +20,7 @@ import common.pyelastix
 
 
 @cached(body_zone_segmentation.train_zone_segmentation_cnn, dataio.get_data_and_threat_heatmaps,
-        body_zone_segmentation.get_depth_maps, version=1)
+        body_zone_segmentation.get_depth_maps, version=2)
 def write_body_zone_errors(mode, *args, **kwargs):
     names, labels, dset = dataio.get_data_and_threat_heatmaps(mode)
     _, _, dmap = body_zone_segmentation.get_depth_maps(mode)
@@ -43,7 +43,7 @@ def write_body_zone_errors(mode, *args, **kwargs):
                     body /= body.max()
                     image = np.concatenate([body, colors], axis=1)
                     image[ci-2:ci+3, cj-2:cj+3, 0] = 1
-                    imageio.imsave('%s_%s_%s.png' % (name, label[j]+1, z[ci, cj]), image)
+                    imageio.imsave('%s_%s_%s_%s.png' % (name, i, label[j]+1, z[ci, cj]), image)
 
 
 @cached(body_zone_segmentation.get_normalized_synthetic_zone_data,
