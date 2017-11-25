@@ -17,6 +17,10 @@ import pickle
 import imageio
 import math
 import time
+import multiprocessing
+import subprocess
+import string
+import random
 
 
 @cached(get_data, get_aps_data_hdf5, subdir='ssd', version=4)
@@ -409,16 +413,58 @@ def train_zone_segmentation_cnn(mode, duration, learning_rate=1e-3, stretch_amou
     return predict
 
 
-@cached(train_zone_segmentation_cnn, get_depth_maps, version=3)
+def spatial_pool_zones(gen):
+    max_procs = multiprocessing.cpu_count()
+    batch = []
+    with read_input_dir('scripts'):
+        exe = os.getcwd() + '/spatial_pooling.exe'
+    subprocess.call('rm *.in', shell=True)
+    subprocess.call('rm *.out', shell=True)
+
+    def flush_batch():
+        filenames = []
+        procs = []
+        for data in batch:
+            random_string = ''.join(random.choice(string.ascii_uppercase) for _ in range(64))
+            with open('%s.in' % random_string, 'wb') as f:
+                f.write(data.astype('float32').tobytes())
+            filenames.append(random_string)
+            proc = subprocess.Popen([exe, '%s.in' % random_string,
+                                     '%s.out' % random_string])
+            procs.append(proc)
+
+        ret = []
+        for proc, file in zip(procs, filenames):
+            retcode = proc.wait()
+            if retcode != 0:
+                raise Exception('failed to do spatial pooling')
+            data = np.fromfile('%s.out' % file, dtype='float32').reshape((16, 330, 256, 19))
+            subprocess.check_call(['rm', '%s.in' % file])
+            subprocess.check_call(['rm', '%s.out' % file])
+            ret.append(data[..., 1:] / np.sum(data[..., 1:], axis=-1, keepdims=True))
+        batch.clear()
+        return ret
+
+    for data in gen:
+        batch.append(data)
+        if len(batch) == max_procs:
+            yield from flush_batch()
+    yield from flush_batch()
+
+
+@cached(train_zone_segmentation_cnn, get_depth_maps, version=5)
 def get_body_zones(mode):
     if not os.path.exists('done'):
         names, labels, dset_in = get_depth_maps(mode)
-        predict = train_zone_segmentation_cnn('all', 0.25, stretch_amount=0.75, random_shift=0,
-                                              random_scale=0, random_noise_z=2)
+        predict = train_zone_segmentation_cnn('all', 0.25, stretch_amount=0.75, random_shift=0.1,
+                                              random_scale=0.1, random_noise_z=2)
         f = h5py.File('data.hdf5', 'w')
         dset = f.create_dataset('dset', (len(dset_in), 16, 330, 256, 18))
 
-        for i, pred in enumerate(predict(tqdm.tqdm(dset_in), 64)):
+        def gen():
+            for data, pred in zip(dset_in, predict(tqdm.tqdm(dset_in), 64)):
+                yield np.concatenate([data[..., np.newaxis], pred], axis=-1)
+        for i, pred in enumerate(spatial_pool_zones(gen())):
             dset[i] = pred
 
         with open('pkl', 'wb') as f:
