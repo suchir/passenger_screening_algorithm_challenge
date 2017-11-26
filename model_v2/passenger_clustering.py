@@ -361,11 +361,11 @@ def get_augmented_segmentation_data_split(mode, n_split, split_id):
 
                 di += 4
 
+        f.close()
         open('done', 'w').close()
-    else:
-        print(glob.glob('*'))
-        f = h5py.File('data.hdf5', 'r')
-        dset = f['dset']
+
+    f = h5py.File('data.hdf5', 'r')
+    dset = f['dset']
     return dset
 
 
