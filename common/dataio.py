@@ -224,15 +224,33 @@ def get_data(mode, dtype):
             yield name, labels.get(name), read_data(file)
 
     class DataGenerator(object):
-        def __init__(self):
-            self.gen = generator()
-            self.len = len(files)
+        def __init__(self, start=0, stop=None):
+            self.index = start
+            self.stop = len(files) if stop is None else stop
 
         def __len__(self):
             return self.len
 
         def __iter__(self):
-            return self.gen
+            return self
+
+        def __next__(self):
+            if self.index == self.stop:
+                raise StopIteration
+            file = files[self.index].replace('\\', '/')
+            name = file.split('/')[-1].split('.')[0]
+            ret = name, labels.get(name), read_data(file)
+            self.index += 1
+            return ret
+
+        def __getitem__(self, key):
+            if isinstance(key, slice):
+                return DataGenerator(key.start, key.stop)
+            else:
+                return next(DataGenerator(key))
+
+        def __len__(self):
+            return self.stop - self.index
 
     return DataGenerator()
 
