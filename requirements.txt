@@ -3,3 +3,5 @@ imageio>=2.2.0
 scikit-image>=0.13.0
 scikit-learn>=0.18.1
 tqdm>=4.14.0
+opencv-python>=3.3.0.9
+pyelastix>=1.1
