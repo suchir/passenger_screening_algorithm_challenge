@@ -1,5 +1,5 @@
 from common.caching import read_input_dir, cached
-from common.dataio import get_aps_data_hdf5, get_passenger_clusters
+from common.dataio import get_aps_data_hdf5, get_passenger_clusters, get_data
 
 from . import dataio
 
@@ -307,6 +307,68 @@ def get_augmented_aps_segmentation_data(mode, n_split, split_id):
         f = h5py.File('data.hdf5', 'r')
         dset = f['dset']
     return names, labels, dset
+
+
+@cached(get_data, get_candidate_neighbors, subdir='ssd', cloud_cache=True, version=1)
+def get_augmented_segmentation_data_split(mode, n_split, split_id):
+    if not os.path.exists('done'):
+        aps_gen, a3daps_gen = get_data(mode, 'aps'), get_data(mode, 'a3daps')
+        n = len(aps_gen)
+        m = int(np.ceil(n/n_split))
+        i1, i2 = split_id*m, min(n, (split_id+1)*m)
+        n_neighbor = 8
+
+        f = h5py.File('data.hdf5', 'w')
+        dset = f.create_dataset('dset', (i2-i1, 16, 660, 512, 8))
+        neighbors = get_candidate_neighbors(mode, n_neighbor)
+
+        def normalize(data, mode):
+            if mode == 'aps':
+                return np.transpose(data[2])[:, ::-1] * 1000
+            else:
+                return np.transpose(data[2])[::4, ::-1]
+
+        gen = zip(aps_gen[i1:i2], a3daps_gen[i1:i2])
+        for i, (aps_data, a3daps_data) in tqdm.tqdm(enumerate(gen), total=i2-i1):
+            di = 0
+            for data, mode in [(aps_data, 'aps'), (a3daps_data, 'a3daps')]:
+                data = normalize(data, mode)
+                dset[i, ..., di] = data
+
+                im1, im2 = [], []
+                rot = np.concatenate([data[0:1, :, ::-1], data[-1::-1, :, ::-1]])
+                for j in range(16):
+                    im1.append(rot[j])
+                    im2.append(data[j])
+                reg = register_images(im1, im2)
+                for j in range(16):
+                    dset[i, j, ..., di+1] = reg[j][0]
+
+                cand = []
+                for j in tqdm.tqdm(neighbors[i1+i]):
+                    neighbor = aps_gen[j] if mode == 'aps' else a3daps_gen[j]
+                    neighbor = normalize(neighbor, mode)
+                    im1, im2 = [], []
+                    for k in range(16):
+                        im1.append(neighbor[k])
+                        im2.append(data[k])
+                    reg = register_images(im1, im2)
+                    cand.append((sum(x[1] for x in reg), (np.stack([x[0] for x in reg]))))
+                cand.sort(key=lambda x: x[0])
+                cand = np.stack([x[1] for x in cand[:n_neighbor]])
+                dset[i, ..., di+2] = np.mean(cand, axis=0)
+                dset[i, ..., di+3] = np.std(cand, axis=0)
+
+                di += 4
+
+        open('done', 'w').close()
+    else:
+        print(glob.glob('*'))
+        f = h5py.File('data.hdf5', 'r')
+        dset = f['dset']
+    return dset
+
+
 
 
 @cached(get_aps_data_hdf5, get_augmented_aps_segmentation_data, subdir='ssd', cloud_cache=True,
