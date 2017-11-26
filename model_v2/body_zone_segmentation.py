@@ -441,7 +441,7 @@ def spatial_pool_zones(gen):
             data = np.fromfile('%s.out' % file, dtype='float32').reshape((16, 330, 256, 19))
             subprocess.check_call(['rm', '%s.in' % file])
             subprocess.check_call(['rm', '%s.out' % file])
-            ret.append(data[..., 1:] / np.sum(data[..., 1:], axis=-1, keepdims=True))
+            ret.append(data[..., 1:] / (np.sum(data[..., 1:], axis=-1, keepdims=True) + 1e-6))
         batch.clear()
         return ret
 
