@@ -10,6 +10,8 @@ import tqdm
 import h5py
 import pickle
 import imageio
+import skimage.measure
+import cv2
 
 
 SEGMENTATION_COLORS = np.array([[255, 0, 0], [255, 0, 255], [0, 0, 255]])
@@ -49,6 +51,79 @@ def get_threat_heatmaps(mode):
         f = h5py.File('data.hdf5', 'r')
         th = f['th']
     return th
+
+
+@cached(get_threat_heatmaps, version=6, subdir='ssd')
+def get_augmented_threat_heatmaps(mode):
+    if not os.path.exists('done'):
+        th_in = get_threat_heatmaps(mode)
+        f = h5py.File('data.hdf5', 'w')
+        th = f.create_dataset('th', (len(th_in), 16, 660, 512, 6))
+
+        def segmentation_mask(masks):
+            ret = np.zeros((16, 660, 512, 2))
+            for i in range(16):
+                for j in range(3):
+                    cur = masks[..., i, j]
+                    if not cur.any():
+                        continue
+                    ret[i, ..., 0] += cur / np.max(cur)
+                    ret[i, ..., 1] += cur / np.sum(cur)
+            return ret
+
+        def com_mask(masks):
+            ret = np.zeros((16, 660, 512, 2))
+            for i in range(16):
+                for j in range(3):
+                    cur = masks[..., i, j]
+                    if not cur.any():
+                        continue
+                    M = skimage.measure.moments(cur.astype('double'))
+                    xb, yb = M[0, 1]/M[0, 0], M[1, 0]/M[0, 0]
+                    u20 = M[2, 0]/M[0, 0] - yb**2
+                    u02 = M[0, 2]/M[0, 0] - xb**2
+                    u11 = M[1, 1]/M[0, 0] - xb*yb
+                    cov = np.array([[u02, u11], [u11, u20]])
+                    covinv = np.linalg.inv(cov)
+                    mean = np.array([xb, yb])
+                    gx, gy = np.meshgrid(np.arange(512), np.arange(660))
+                    g = np.reshape(np.stack([gy, gx], axis=-1), (-1, 2))
+                    g = np.exp(-2*np.sum((g-mean).dot(covinv)*(g-mean), axis=1))
+                    g = np.reshape(g, (660, 512))
+                    ret[i, ..., 0] += g / np.max(g)
+                    ret[i, ..., 1] += g / np.sum(g)
+            return ret
+
+        def distance_mask(masks):
+            ret = np.zeros((16, 660, 512, 2))
+            for i in range(16):
+                for j in range(3):
+                    cur = (masks[..., i, j]*255).astype('uint8')
+                    if not cur.any():
+                        continue
+                    g = cv2.distanceTransform(cur, cv2.DIST_L2, cv2.DIST_MASK_PRECISE)
+                    ret[i, ..., 0] += g / np.max(g)
+                    ret[i, ..., 1] += g / np.sum(g)
+            return ret
+
+        moments = np.zeros((6, 2))
+        for i, data in enumerate(tqdm.tqdm(th_in)):
+            th[i, ..., 0:2] = segmentation_mask(data)
+            th[i, ..., 2:4] = com_mask(data)
+            th[i, ..., 4:6] = distance_mask(data)
+            for j in range(6):
+                cur = th[i, ..., j]
+                moments[j, 0] += np.mean(cur) / len(th)
+                moments[j, 1] += np.mean(cur**2) / len(th)
+        moments[:, 1] = np.sqrt(moments[:, 1] - moments[:, 0]**2)
+
+        np.save('moments.npy', moments)
+        open('done', 'w').close()
+    else:
+        f = h5py.File('data.hdf5', 'r')
+        th = f['th']
+        moments = np.load('moments.npy')
+    return th, moments
 
 
 @cached(get_aps_data_hdf5, get_threat_heatmaps, version=0, subdir='ssd')
