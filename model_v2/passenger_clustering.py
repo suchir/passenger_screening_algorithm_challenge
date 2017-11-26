@@ -369,8 +369,6 @@ def get_augmented_segmentation_data_split(mode, n_split, split_id):
     return dset
 
 
-
-
 @cached(get_aps_data_hdf5, get_augmented_aps_segmentation_data, subdir='ssd', cloud_cache=True,
         version=0)
 def join_augmented_aps_segmentation_data(mode, n_split):
