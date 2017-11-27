@@ -19,7 +19,8 @@ import h5py
 
 @cached(passenger_clustering.join_augmented_aps_segmentation_data, cloud_cache=True, version=2)
 def train_augmented_hourglass_cnn(mode, duration, learning_rate=1e-3, random_scale=False,
-                                  drop_loss=0, downsample=True, num_filters=64):
+                                  drop_loss=0, downsample=True, num_filters=64,
+                                  loss_type='logloss'):
     angles, height, width, res, filters = 16, 660, 512, 512, 7
 
     tf.reset_default_graph()
@@ -64,10 +65,16 @@ def train_augmented_hourglass_cnn(mode, duration, learning_rate=1e-3, random_sca
         loss = (tf.add_n(pos_loss) + neg_loss) / tf.cast(tf.size(logits), tf.float32)
     else:
         labels = tf.reduce_sum(data[..., -3:], axis=-1, keep_dims=True)
-        loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=labels, logits=logits))
+        if loss_type == 'logloss':
+            loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=labels, logits=logits))
+        else:
+            loss = tf.losses.mean_squared_error(labels, logits)
 
     # actual predictions
-    preds = tf.sigmoid(logits)
+    if loss_type == 'logloss':
+        preds = tf.sigmoid(logits)
+    else:
+        preds = logits
     preds = tf.cond(flip_lr > 0, lambda: preds[:, :, ::-1, :], lambda: preds)
     preds = preds[:, padding[1][0]:-padding[1][1]-1, padding[2][0]:-padding[2][0]-1, :]
     preds = tf.squeeze(tf.image.resize_images(preds, [height, width]))
