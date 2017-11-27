@@ -145,7 +145,7 @@ def get_passenger_clusters():
     return clusters
 
 
-@cached(version=0)
+@cached(get_passenger_clusters, cloud_cache=True, version=0)
 def get_cv_splits(n_split):
     if not os.path.exists('cv.pkl'):
         id_names = get_passenger_clusters()
