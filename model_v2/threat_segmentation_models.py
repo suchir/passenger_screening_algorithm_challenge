@@ -1,5 +1,6 @@
 from common.caching import cached, read_log_dir
 from common.math import sigmoid, log_loss
+from common.dataio import get_train_idx, get_valid_idx
 
 from . import tf_models
 from . import dataio
@@ -15,6 +16,117 @@ import tqdm
 import math
 import random
 import h5py
+
+
+@cached(passenger_clustering.get_augmented_segmentation_data, dataio.get_augmented_threat_heatmaps,
+        version=0)
+def train_multitask_cnn(mode, cvid, duration, weights):
+    angles, height, width, res, filters = 16, 660, 512, 512, 14
+
+    tf.reset_default_graph()
+
+    data_in = tf.placeholder(tf.float32, [angles, height, width, filters])
+    moments_in = tf.placeholder(tf.float32, [8, 2])
+    means_in = tf.placeholder(tf.float32, [6])
+
+    # random resize
+    size = tf.random_uniform([2], minval=int(0.75*res), maxval=res, dtype=tf.int32)
+    h_pad, w_pad = (res-size[0])//2, (res-size[1])//2
+    padding = [[0, 0], [h_pad, res-size[0]-h_pad], [w_pad, res-size[1]-w_pad]]
+    data = tf.image.resize_images(data_in, size)
+    data = tf.stack([tf.pad(data[..., i], padding) for i in range(filters)], axis=-1)
+
+    # random left-right flip
+    flip_lr = tf.random_uniform([], maxval=2, dtype=tf.int32)
+    data = tf.cond(flip_lr > 0, lambda: data[:, :, ::-1, :], lambda: data)
+
+    # input normalization
+    data_list = []
+    for i in range(8):
+        data_list.append((data[..., i] - moments_in[i, 0]) / moments_in[i, 1])
+    labels = data[..., 8:]
+    data = tf.concat([tf.stack(data_list, axis=-1), labels], axis=-1)
+
+    # get logits
+    _, logits = tf_models.hourglass_cnn(labels, res, 4, res, 64, num_output=6)
+
+    # loss on segmentations
+    losses, summaries = [], []
+    for i in range(6):
+        cur_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=labels[..., i],
+                                                                          logits=logits[..., i]))
+        cur_summary = tf.summary.scalar('loss_%s' % i, cur_loss)
+        default_loss = -(means_in[i]*tf.log(means_in[i]) + (1-means_in[i])*tf.log(1-means_in[i]))
+        losses.append(cur_loss / default_loss * weights[i])
+        summaries.append(cur_summary)
+    loss = tf.add_n(losses)
+    summaries.append(tf.summary.scalar('loss', loss))
+
+    # actual predictions
+    preds = tf.sigmoid(logits)
+    preds = tf.cond(flip_lr > 0, lambda: preds[:, :, ::-1, :], lambda: preds)
+    preds = preds[:, padding[1][0]:-padding[1][1]-1, padding[2][0]:-padding[2][0]-1, :]
+    preds = tf.squeeze(tf.image.resize_images(preds, [height, width]))
+
+    # optimization
+    optimizer = tf.train.AdamOptimizer()
+    train_step = optimizer.minimize(loss)
+
+    saver = tf.train.Saver()
+    model_path = os.getcwd() + '/model.ckpt'
+
+    dset_all, moments_all = passenger_clustering.get_augmented_segmentation_data(mode, 10)
+    labels_all, means_all = dataio.get_augmented_threat_heatmaps(mode)
+    train_idx, valid_idx = get_train_idx(mode, cvid), get_valid_idx(mode, cvid)
+
+    with read_log_dir():
+        writer = tf.summary.FileWriter(os.getcwd())
+
+    def data_gen(dset, moments, labels, means, idx):
+        for i in tqdm.tqdm(idx):
+            data = np.concatenate([dset[i], labels[i]], axis=-1)
+            yield {
+                data_in: data,
+                moments_in: moments,
+                means_in: means
+            }
+
+    def eval_model(sess):
+        losses = []
+        for data in data_gen(dset_all, moments_all, labels_all, means_all, valid_idx):
+            cur_loss = sess.run(loss, feed_dict=data)
+            losses.append(cur_loss)
+        return np.mean(losses)
+
+    def train_model(sess):
+        it = 0
+        t0 = time.time()
+        best_valid_loss = None
+        while time.time() - t0 < duration * 3600:
+            for data in data_gen(dset_all, moments_all, labels_all, means_all, train_idx):
+                cur_summaries = sess.run([summaries] + [train_step], feed_dict=data)
+                cur_summaries.pop()
+                for summary in cur_summaries:
+                    writer.add_summary(summary, it)
+                it += 1
+
+            valid_loss = eval_model(sess)
+            cur_valid_summary = tf.Summary()
+            cur_valid_summary.value.add(tag='valid_loss', simple_value=valid_loss)
+            writer.add_summary(cur_valid_summary, it)
+
+            if best_valid_loss is None or valid_loss < best_valid_loss:
+                best_valid_loss = valid_loss
+                saver.save(sess, model_path)
+
+    with tf.Session() as sess:
+        sess.run(tf.global_variables_initializer())
+        train_model(sess)
+
+    open('done', 'w').close()
+
+    return predict
+
 
 
 @cached(passenger_clustering.join_augmented_aps_segmentation_data, cloud_cache=True, version=2)
@@ -64,14 +176,22 @@ def train_augmented_hourglass_cnn(mode, duration, learning_rate=1e-3, random_sca
                                                                          logits=logits)*(1-labels))
         loss = (tf.add_n(pos_loss) + neg_loss) / tf.cast(tf.size(logits), tf.float32)
     else:
-        labels = tf.reduce_sum(data[..., -3:], axis=-1, keep_dims=True)
-        if loss_type == 'logloss':
-            loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=labels, logits=logits))
+        if loss_type == 'density':
+            hmaps = data[..., -3:]
+            labels = tf.reduce_sum(hmaps / (tf.reduce_sum(hmaps, axis=(1, 2), keep_dims=True)+1e-3),
+                                   axis=-1, keep_dims=True)
+            loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=labels,
+                                                                          logits=logits))
         else:
-            loss = tf.losses.mean_squared_error(labels, logits)
+            labels = tf.reduce_sum(data[..., -3:], axis=-1, keep_dims=True)
+            if loss_type == 'logloss':
+                loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=labels,
+                                                                              logits=logits))
+            else:
+                loss = tf.losses.mean_squared_error(labels, logits)
 
     # actual predictions
-    if loss_type == 'logloss':
+    if loss_type != 'l2':
         preds = tf.sigmoid(logits)
     else:
         preds = logits

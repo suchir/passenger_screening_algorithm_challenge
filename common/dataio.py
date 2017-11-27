@@ -224,9 +224,10 @@ def get_data(mode, dtype):
             yield name, labels.get(name), read_data(file)
 
     class DataGenerator(object):
-        def __init__(self, start=0, stop=None):
+        def __init__(self, files, start=0, stop=None):
             self.index = start
             self.stop = len(files) if stop is None else stop
+            self.files = files[start:stop]
 
         def __len__(self):
             return self.len
@@ -237,7 +238,7 @@ def get_data(mode, dtype):
         def __next__(self):
             if self.index == self.stop:
                 raise StopIteration
-            file = files[self.index].replace('\\', '/')
+            file = self.files[self.index].replace('\\', '/')
             name = file.split('/')[-1].split('.')[0]
             ret = name, labels.get(name), read_data(file)
             self.index += 1
@@ -245,14 +246,29 @@ def get_data(mode, dtype):
 
         def __getitem__(self, key):
             if isinstance(key, slice):
-                return DataGenerator(key.start, key.stop)
+                return DataGenerator(self.files, key.start, key.stop)
             else:
-                return next(DataGenerator(key))
+                return next(DataGenerator(self.files, key))
 
         def __len__(self):
             return self.stop - self.index
 
-    return DataGenerator()
+    return DataGenerator(files)
+
+
+def _get_idx(mode, cond):
+    gen = get_data(mode, 'aps')
+    splits = get_cv_splits(5)
+    files = [file.replace('\\', '/').split('/')[-1].split('.')[0] for file in gen.files]
+    return [i for i, file in enumerate(files) if cond(splits[file])]
+
+
+def get_train_idx(mode, cvid):
+    return _get_idx(mode, lambda split: split != cvid)
+
+
+def get_valid_idx(mode, cvid):
+    return _get_idx(mode, lambda split: split == cvid)
 
 
 @cached(version=1)
