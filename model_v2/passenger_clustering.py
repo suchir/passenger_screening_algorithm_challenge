@@ -369,6 +369,37 @@ def get_augmented_segmentation_data_split(mode, n_split, split_id):
     return dset
 
 
+@cached(get_augmented_segmentation_data_split, subdir='ssd', cloud_cache=True, version=0)
+def get_augmented_segmentation_data(mode, n_split):
+    if not os.path.exists('done'):
+        dsets = []
+        for split_id in tqdm.trange(n_split):
+            dsets.append(get_augmented_segmentation_data_split(mode, n_split, split_id))
+
+        f = h5py.File('data.hdf5', 'w')
+        dset = f.create_dataset('dset', (sum(len(x) for x in dsets),) + dsets[0].shape[1:])
+
+        moments = np.zeros((8, 2))
+        i = 0
+        for dset_in in dsets:
+            for data in tqdm.tqdm(dset_in):
+                dset[i] = data
+                moments[j, 0] += np.mean(data, axis=(0, 1, 2)) / len(dset)
+                moments[j, 1] += np.mean(data**2, axis=(0, 1, 2)) / len(dset)
+                i += 1
+
+        moments[:, 1] = np.sqrt(moments[:, 1] - moments[:, 0]**2)
+
+        np.save('moments.npy', moments)
+        f.close()
+        open('done', 'w').close()
+
+    f = h5py.File('data.hdf5', 'r')
+    dset = f['dset']
+    moments = np.load('moments.npy')
+    return dset, moments
+
+
 @cached(get_aps_data_hdf5, get_augmented_aps_segmentation_data, subdir='ssd', cloud_cache=True,
         version=0)
 def join_augmented_aps_segmentation_data(mode, n_split):
