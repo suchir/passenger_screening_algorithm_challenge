@@ -53,7 +53,7 @@ def get_threat_heatmaps(mode):
     return th
 
 
-@cached(get_threat_heatmaps, version=6, subdir='ssd')
+@cached(get_threat_heatmaps, version=7, subdir='ssd', cloud_cache=True)
 def get_augmented_threat_heatmaps(mode):
     if not os.path.exists('done'):
         th_in = get_threat_heatmaps(mode)
@@ -106,24 +106,21 @@ def get_augmented_threat_heatmaps(mode):
                     ret[i, ..., 1] += g / np.sum(g)
             return ret
 
-        moments = np.zeros((6, 2))
+        mean = np.zeros(6)
         for i, data in enumerate(tqdm.tqdm(th_in)):
             th[i, ..., 0:2] = segmentation_mask(data)
             th[i, ..., 2:4] = com_mask(data)
             th[i, ..., 4:6] = distance_mask(data)
-            for j in range(6):
-                cur = th[i, ..., j]
-                moments[j, 0] += np.mean(cur) / len(th)
-                moments[j, 1] += np.mean(cur**2) / len(th)
-        moments[:, 1] = np.sqrt(moments[:, 1] - moments[:, 0]**2)
+            mean += np.mean(th[i], axis=(0, 1, 2)) / len(th)
 
-        np.save('moments.npy', moments)
+        np.save('mean.npy', mean)
+        f.close()
         open('done', 'w').close()
-    else:
-        f = h5py.File('data.hdf5', 'r')
-        th = f['th']
-        moments = np.load('moments.npy')
-    return th, moments
+
+    f = h5py.File('data.hdf5', 'r')
+    th = f['th']
+    mean = np.load('mean.npy')
+    return th, mean
 
 
 @cached(get_aps_data_hdf5, get_threat_heatmaps, version=0, subdir='ssd')
