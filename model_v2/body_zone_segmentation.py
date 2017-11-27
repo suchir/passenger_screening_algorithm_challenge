@@ -441,7 +441,7 @@ def spatial_pool_zones(gen):
             data = np.fromfile('%s.out' % file, dtype='float32').reshape((16, 330, 256, 19))
             subprocess.check_call(['rm', '%s.in' % file])
             subprocess.check_call(['rm', '%s.out' % file])
-            ret.append(data[..., 1:] / (np.sum(data[..., 1:], axis=-1, keepdims=True) + 1e-6))
+            ret.append(data[..., 1:])
         batch.clear()
         return ret
 
@@ -452,7 +452,7 @@ def spatial_pool_zones(gen):
     yield from flush_batch()
 
 
-@cached(train_zone_segmentation_cnn, get_depth_maps, version=5)
+@cached(train_zone_segmentation_cnn, get_depth_maps, subdir='ssd', cloud_cache=True, version=5)
 def get_body_zones(mode):
     if not os.path.exists('done'):
         names, labels, dset_in = get_depth_maps(mode)
@@ -465,14 +465,17 @@ def get_body_zones(mode):
             for data, pred in zip(dset_in, predict(tqdm.tqdm(dset_in), 64)):
                 yield np.concatenate([data[..., np.newaxis], pred], axis=-1)
         for i, pred in enumerate(spatial_pool_zones(gen())):
+            pred[np.sum(pred, axis=-1) == 0, 0] = 1
+            pred /= np.sum(pred, axis=-1, keepdims=True)
             dset[i] = pred
 
         with open('pkl', 'wb') as f:
             pickle.dump((names, labels), f)
+        f.close()
         open('done', 'w').close()
-    else:
-        with open('pkl', 'rb') as f:
-            names, labels = pickle.load(f)
-        f = h5py.File('data.hdf5', 'r')
-        dset = f['dset']
+
+    with open('pkl', 'rb') as f:
+        names, labels = pickle.load(f)
+    f = h5py.File('data.hdf5', 'r')
+    dset = f['dset']
     return names, labels, dset
