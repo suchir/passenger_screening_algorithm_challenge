@@ -78,7 +78,7 @@ class CachedFunction(object):
                               shell=True)
 
     def _upload_cache(self, path):
-        subprocess.check_call('gsutil -m cp -r "%s/*" "%s/%s"' % (path, CACHE_BUCKET, path),
+        subprocess.check_call('gsutil -m cp -r "%s/*" "%s/%s/"' % (path, CACHE_BUCKET, path),
                               shell=True)
 
     def __call__(self, *args, **kwargs):
