@@ -19,7 +19,7 @@ import h5py
 
 
 @cached(passenger_clustering.get_augmented_segmentation_data, dataio.get_augmented_threat_heatmaps,
-        version=0)
+        version=1)
 def train_multitask_cnn(mode, cvid, duration, weights):
     angles, height, width, res, filters = 16, 660, 512, 512, 14
 
@@ -45,10 +45,10 @@ def train_multitask_cnn(mode, cvid, duration, weights):
     for i in range(8):
         data_list.append((data[..., i] - moments_in[i, 0]) / moments_in[i, 1])
     labels = data[..., 8:]
-    data = tf.concat([tf.stack(data_list, axis=-1), labels], axis=-1)
+    data = tf.stack(data_list, axis=-1)
 
     # get logits
-    _, logits = tf_models.hourglass_cnn(labels, res, 4, res, 64, num_output=6)
+    _, logits = tf_models.hourglass_cnn(data, res, 4, res, 64, num_output=6)
 
     # loss on segmentations
     losses, summaries = [], []
@@ -104,7 +104,7 @@ def train_multitask_cnn(mode, cvid, duration, weights):
         best_valid_loss = None
         while time.time() - t0 < duration * 3600:
             for data in data_gen(dset_all, moments_all, labels_all, means_all, train_idx):
-                cur_summaries = sess.run([summaries] + [train_step], feed_dict=data)
+                cur_summaries = sess.run(summaries + [train_step], feed_dict=data)
                 cur_summaries.pop()
                 for summary in cur_summaries:
                     writer.add_summary(summary, it)
