@@ -43,7 +43,7 @@ def train_multitask_cnn(mode, cvid, duration, weights, sanity_check=False):
     # input normalization
     labels = data[..., 8:]
     if sanity_check:
-        data = data[..., :4]
+        data = data[..., :4] * sanity_check
     else:
         data_list = []
         for i in range(8):
