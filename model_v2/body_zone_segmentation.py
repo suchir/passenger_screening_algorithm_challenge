@@ -465,8 +465,7 @@ def get_body_zones(mode):
             for data, pred in zip(dset_in, predict(tqdm.tqdm(dset_in), 64)):
                 yield np.concatenate([data[..., np.newaxis], pred], axis=-1)
         for i, pred in enumerate(spatial_pool_zones(gen())):
-            pred[np.sum(pred, axis=-1) == 0, 0] = 1
-            pred /= np.sum(pred, axis=-1, keepdims=True)
+            pred[np.sum(pred, axis=-1) == 0, 0] = 1e-6
             dset[i] = pred
 
         with open('pkl', 'wb') as f:
