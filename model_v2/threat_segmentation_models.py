@@ -20,7 +20,8 @@ import h5py
 
 @cached(passenger_clustering.get_augmented_segmentation_data, dataio.get_augmented_threat_heatmaps,
         version=1)
-def train_multitask_cnn(mode, cvid, duration, weights, sanity_check=False, normalize_data=True):
+def train_multitask_cnn(mode, cvid, duration, weights, sanity_check=False, normalize_data=True,
+                        scale_data=1):
     angles, height, width, res, filters = 16, 660, 512, 512, 14
 
     tf.reset_default_graph()
@@ -50,7 +51,7 @@ def train_multitask_cnn(mode, cvid, duration, weights, sanity_check=False, norma
             data_list.append((data[..., i] - moments_in[i, 0]) / moments_in[i, 1])
         data = tf.stack(data_list, axis=-1)
     else:
-        data = data[..., :8]
+        data = data[..., :8] * scale_data
 
     # get logits
     _, logits = tf_models.hourglass_cnn(data, res, 4, res, 64, num_output=6)
@@ -273,6 +274,25 @@ def train_augmented_hourglass_cnn(mode, duration, learning_rate=1e-3, random_sca
     open('done', 'w').close()
 
     return predict
+
+
+@cached(train_augmented_hourglass_cnn, cloud_cache=True, version=0)
+def get_augmented_hourglass_predictions(mode):
+    if not os.path.exists('done'):
+        _, _, dset_in = passenger_clustering.join_augmented_aps_segmentation_data(mode, 6)
+        f = h5py.File('data.hdf5')
+        dset = f.create_dataset('dset', (len(dset_in), 16, 330, 256))
+        predict = train_augmented_hourglass_cnn('train-0', 8)
+
+        for i, pred in enumerate(predict(dset_in)):
+            dset[i] = pred[:, ::2, ::2]
+
+        f.close()
+        open('done', 'w').close()
+
+    f = h5py.File('data.hdf5', 'r')
+    dset = f['dset']
+    return dset
 
 
 @cached(passenger_clustering.get_clustered_data_and_threat_heatmaps, version=0)
