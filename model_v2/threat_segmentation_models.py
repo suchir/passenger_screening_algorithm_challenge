@@ -20,7 +20,7 @@ import h5py
 
 @cached(passenger_clustering.get_augmented_segmentation_data, dataio.get_augmented_threat_heatmaps,
         version=1)
-def train_multitask_cnn(mode, cvid, duration, weights):
+def train_multitask_cnn(mode, cvid, duration, weights, sanity_check=False):
     angles, height, width, res, filters = 16, 660, 512, 512, 14
 
     tf.reset_default_graph()
@@ -41,11 +41,14 @@ def train_multitask_cnn(mode, cvid, duration, weights):
     data = tf.cond(flip_lr > 0, lambda: data[:, :, ::-1, :], lambda: data)
 
     # input normalization
-    data_list = []
-    for i in range(8):
-        data_list.append((data[..., i] - moments_in[i, 0]) / moments_in[i, 1])
     labels = data[..., 8:]
-    data = tf.stack(data_list, axis=-1)
+    if sanity_check:
+        data = data[..., :4]
+    else:
+        data_list = []
+        for i in range(8):
+            data_list.append((data[..., i] - moments_in[i, 0]) / moments_in[i, 1])
+        data = tf.stack(data_list, axis=-1)
 
     # get logits
     _, logits = tf_models.hourglass_cnn(data, res, 4, res, 64, num_output=6)
