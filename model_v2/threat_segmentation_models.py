@@ -280,11 +280,11 @@ def train_augmented_hourglass_cnn(mode, duration, learning_rate=1e-3, random_sca
 def get_augmented_hourglass_predictions(mode):
     if not os.path.exists('done'):
         _, _, dset_in = passenger_clustering.join_augmented_aps_segmentation_data(mode, 6)
-        f = h5py.File('data.hdf5')
+        f = h5py.File('data.hdf5', 'w')
         dset = f.create_dataset('dset', (len(dset_in), 16, 330, 256))
         predict = train_augmented_hourglass_cnn('train-0', 8)
 
-        for i, pred in enumerate(predict(dset_in)):
+        for i, (pred, _) in enumerate(predict(dset_in)):
             dset[i] = pred[:, ::2, ::2]
 
         f.close()
