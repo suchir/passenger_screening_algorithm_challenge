@@ -29,7 +29,7 @@ def train_simple_segmentation_model(mode, duration, learning_rate=1e-3, num_filt
     zones_in = tf.placeholder(tf.float32, [16, 330, 256, 18])
     hmaps_in = tf.placeholder(tf.float32, [16, 330, 256, 2])
     labels_in = tf.placeholder(tf.float32, [17])
-    confidence = tf.get_variable('confidence', [])
+    confidence = tf.get_variable('confidence', [], initializer=tf.constant_initializer(1))
 
     if blur_size > 0:
         rx = tf.expand_dims(tf.pow(tf.range(blur_size, dtype=tf.float32)-(blur_size-1)/2, 2.0), -1)
@@ -47,7 +47,7 @@ def train_simple_segmentation_model(mode, duration, learning_rate=1e-3, num_filt
         zones = zones_in
 
     zones = zones / tf.reduce_sum(zones, axis=-1, keep_dims=True)
-    zones = tf.exp(tf.log(zones + 1e-6) * confidence)
+    zones = tf.exp(tf.log(zones + 1e-6) * tf.square(confidence))
     zones = zones / tf.reduce_sum(zones, axis=-1, keep_dims=True)
 
     scales = [1, 100]
