@@ -22,7 +22,8 @@ import h5py
 @cached(threat_segmentation_models.get_augmented_hourglass_predictions,
         body_zone_segmentation.get_body_zones, version=6)
 def train_simple_segmentation_model(mode, duration, learning_rate=1e-3, num_filters=0,
-                                    num_layers=0, blur_size=0, per_zone=None, use_hourglass=False):
+                                    num_layers=0, blur_size=0, per_zone=None, use_hourglass=False,
+                                    use_rotation=False):
     tf.reset_default_graph()
 
     zones_in = tf.placeholder(tf.float32, [16, 330, 256, 18])
@@ -58,7 +59,14 @@ def train_simple_segmentation_model(mode, duration, learning_rate=1e-3, num_filt
         hmaps = tf.image.resize_images(hmaps, size)
         hmaps = tf.expand_dims(tf.pad(hmaps[..., 0], padding), axis=-1)
 
+        if use_rotation:
+            angle = tf.random_uniform([], maxval=2*math.pi)
+            hmaps = tf.contrib.image.rotate(hmaps, angle)
+
         hmaps, _ = tf_models.hourglass_cnn(hmaps, res, 32, res, num_filters, downsample=False)
+
+        if use_rotation:
+            hmaps = tf.contrib.image.rotate(hmaps, -angle)
 
         hmaps = hmaps[:, padding[1][0]:-padding[1][1]-1, padding[2][0]:-padding[2][0]-1, :]
         hmaps = tf.image.resize_images(hmaps, [330, 256])
