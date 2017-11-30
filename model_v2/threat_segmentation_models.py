@@ -138,7 +138,7 @@ def train_multitask_cnn(mode, cvid, duration, weights, sanity_check=False, norma
 @cached(passenger_clustering.join_augmented_aps_segmentation_data, cloud_cache=True, version=2)
 def train_augmented_hourglass_cnn(mode, duration, learning_rate=1e-3, random_scale=False,
                                   drop_loss=0, downsample=True, num_filters=64,
-                                  loss_type='logloss'):
+                                  loss_type='logloss', global_scale=1, scale_amount=0.25):
     angles, height, width, res, filters = 16, 660, 512, 512, 7
 
     tf.reset_default_graph()
@@ -146,7 +146,7 @@ def train_augmented_hourglass_cnn(mode, duration, learning_rate=1e-3, random_sca
     data_in = tf.placeholder(tf.float32, [angles, height, width, filters])
 
     # random resize
-    size = tf.random_uniform([2], minval=int(0.75*res), maxval=res, dtype=tf.int32)
+    size = tf.random_uniform([2], minval=int((1-scale_amount)*res), maxval=res, dtype=tf.int32)
     h_pad, w_pad = (res-size[0])//2, (res-size[1])//2
     padding = [[0, 0], [h_pad, res-size[0]-h_pad], [w_pad, res-size[1]-w_pad]]
     data = tf.image.resize_images(data_in, size)
@@ -160,7 +160,7 @@ def train_augmented_hourglass_cnn(mode, duration, learning_rate=1e-3, random_sca
     if random_scale:
         scale = 10 * tf.random_uniform([], minval=0.9, maxval=1.1)
     else:
-        scale = 10
+        scale = 10 * global_scale
     label_fix = 1/1000  # screw-up
     data = tf.concat([data[..., :-3] * scale, data[..., -3:] * label_fix], axis=-1)
 
