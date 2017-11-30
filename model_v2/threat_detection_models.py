@@ -50,7 +50,8 @@ def train_simple_segmentation_model(mode, duration, learning_rate=1e-3, num_filt
     zones = tf.exp(tf.log(zones + 1e-6) * confidence)
     zones = zones / tf.reduce_sum(zones, axis=-1, keep_dims=True)
 
-    hmaps = hmaps_in
+    scales = [1, 100]
+    hmaps = tf.stack([hmaps_in[..., i] * scales[i] for i in range(2)], axis=-1)
     if use_hourglass:
         res = 256
         size = tf.random_uniform([2], minval=int(0.75*res), maxval=res, dtype=tf.int32)
