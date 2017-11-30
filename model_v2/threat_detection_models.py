@@ -26,7 +26,7 @@ def train_simple_segmentation_model(mode, duration, learning_rate=1e-3, num_filt
     tf.reset_default_graph()
 
     zones_in = tf.placeholder(tf.float32, [16, 330, 256, 18])
-    hmaps_in = tf.placeholder(tf.float32, [16, 330, 256])
+    hmaps_in = tf.placeholder(tf.float32, [16, 330, 256, 2])
     labels_in = tf.placeholder(tf.float32, [17])
     confidence = tf.get_variable('confidence', [])
 
@@ -49,7 +49,7 @@ def train_simple_segmentation_model(mode, duration, learning_rate=1e-3, num_filt
     zones = tf.exp(tf.log(zones + 1e-6) * confidence)
     zones = zones / tf.reduce_sum(zones, axis=-1, keep_dims=True)
 
-    hmaps = tf.expand_dims(hmaps_in, -1)
+    hmaps = hmaps_in
     if use_hourglass:
         res = 256
         size = tf.random_uniform([2], minval=int(0.75*res), maxval=res, dtype=tf.int32)
