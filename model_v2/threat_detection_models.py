@@ -180,10 +180,11 @@ def train_simple_segmentation_model(mode, duration, learning_rate=1e-3, num_filt
 @cached(train_simple_segmentation_model, version=0)
 def write_simple_segmentation_model_errors(mode, *args, **kwargs):
     cvid = int(mode[-1])
-    names, labels, zones_all = body_zone_segmentation.get_body_zones('all')
+    names, _, zones_all = body_zone_segmentation.get_body_zones('all')
     hmaps = threat_segmentation_models.get_augmented_hourglass_predictions(mode)
     idx = get_train_idx('all', cvid) if mode.startswith('train') else get_valid_idx('all', cvid)
     predict = train_simple_segmentation_model(*args, **kwargs)
+    labels = get_train_labels()
 
     errors = []
     total_loss = 0
