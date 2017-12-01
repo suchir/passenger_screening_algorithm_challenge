@@ -139,7 +139,8 @@ def train_multitask_cnn(mode, cvid, duration, weights, sanity_check=False, norma
 def train_augmented_hourglass_cnn(mode, duration, learning_rate=1e-3, random_scale=False,
                                   drop_loss=0, downsample=True, num_filters=64,
                                   loss_type='logloss', global_scale=1, scale_amount=0.25,
-                                  batch_size=16, gaussian_noise=0):
+                                  batch_size=16, gaussian_noise=0, restore_model=False,
+                                  random_shuffle=False):
     angles, height, width, res, filters = 16, 660, 512, 512, 7
 
     tf.reset_default_graph()
@@ -259,13 +260,16 @@ def train_augmented_hourglass_cnn(mode, duration, learning_rate=1e-3, random_sca
         t0 = time.time()
         best_valid_loss = None
         while time.time() - t0 < duration * 3600:
-            for data in tqdm.tqdm(dset_train):
-                for angle in range(0, 16, batch_size):
-                    _, cur_train_summary = sess.run([train_step, train_summary], feed_dict={
-                        data_in: data[angle:angle+batch_size]
-                    })
-                    writer.add_summary(cur_train_summary, it)
-                    it += 1
+            perm = [(i, j) for i in range(len(dset_train)) for j in range(0, 16, batch_size)]
+            if random_shuffle:
+                random.shuffle(perm)
+            for choice in tqdm.tqdm(perm):
+                data = dset_train[choice[0]][choice[1]:choice[1]+batch_size]
+                _, cur_train_summary = sess.run([train_step, train_summary], feed_dict={
+                    data_in: data
+                })
+                writer.add_summary(cur_train_summary, it)
+                it += 1
 
             valid_loss = eval_model(sess)
             cur_valid_summary = tf.Summary()
@@ -277,7 +281,10 @@ def train_augmented_hourglass_cnn(mode, duration, learning_rate=1e-3, random_sca
                 saver.save(sess, model_path)
 
     with tf.Session() as sess:
-        sess.run(tf.global_variables_initializer())
+        if restore_model:
+            saver.restore(sess, model_path)
+        else:
+            sess.run(tf.global_variables_initializer())
         train_model(sess)
 
     open('done', 'w').close()
