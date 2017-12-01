@@ -138,12 +138,13 @@ def train_multitask_cnn(mode, cvid, duration, weights, sanity_check=False, norma
 @cached(passenger_clustering.join_augmented_aps_segmentation_data, cloud_cache=True, version=2)
 def train_augmented_hourglass_cnn(mode, duration, learning_rate=1e-3, random_scale=False,
                                   drop_loss=0, downsample=True, num_filters=64,
-                                  loss_type='logloss', global_scale=1, scale_amount=0.25):
+                                  loss_type='logloss', global_scale=1, scale_amount=0.25,
+                                  batch_size=16, gaussian_noise=0):
     angles, height, width, res, filters = 16, 660, 512, 512, 7
 
     tf.reset_default_graph()
 
-    data_in = tf.placeholder(tf.float32, [angles, height, width, filters])
+    data_in = tf.placeholder(tf.float32, [None, height, width, filters])
 
     # random resize
     size = tf.random_uniform([2], minval=int((1-scale_amount)*res), maxval=res, dtype=tf.int32)
@@ -155,6 +156,13 @@ def train_augmented_hourglass_cnn(mode, duration, learning_rate=1e-3, random_sca
     # random left-right flip
     flip_lr = tf.random_uniform([], maxval=2, dtype=tf.int32)
     data = tf.cond(flip_lr > 0, lambda: data[:, :, ::-1, :], lambda: data)
+
+    # noise
+    if gaussian_noise > 0:
+        data = tf.concat([
+            data[..., :-3] + tf.random_normal(tf.shape(data[..., :-3]), 0, gaussian_noise),
+            data[..., -3:]
+        ], axis=-1)
 
     # input normalization
     if random_scale:
@@ -252,11 +260,12 @@ def train_augmented_hourglass_cnn(mode, duration, learning_rate=1e-3, random_sca
         best_valid_loss = None
         while time.time() - t0 < duration * 3600:
             for data in tqdm.tqdm(dset_train):
-                _, cur_train_summary = sess.run([train_step, train_summary], feed_dict={
-                    data_in: data
-                })
-                writer.add_summary(cur_train_summary, it)
-                it += 1
+                for angle in range(0, 16, batch_size):
+                    _, cur_train_summary = sess.run([train_step, train_summary], feed_dict={
+                        data_in: data[angle:angle+batch_size]
+                    })
+                    writer.add_summary(cur_train_summary, it)
+                    it += 1
 
             valid_loss = eval_model(sess)
             cur_valid_summary = tf.Summary()
