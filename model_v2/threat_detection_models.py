@@ -111,14 +111,17 @@ def train_simple_segmentation_model(mode, duration, learning_rate=1e-3, num_filt
     saver = tf.train.Saver()
     model_path = os.getcwd() + '/model.ckpt'
 
-    def predict(zones_all, hmaps, idx):
+    def predict(zones_all, hmaps, idx, n_sample=1):
         with tf.Session() as sess:
             saver.restore(sess, model_path)
             for i, hmap in zip(tqdm.tqdm(idx), hmaps):
-                yield sess.run(preds, feed_dict={
-                    zones_in: zones_all[i],
-                    hmaps_in: hmap
-                })
+                ret = np.zeros(17)
+                for _ in range(n_sample):
+                    ret += sess.run(preds, feed_dict={
+                        zones_in: zones_all[i],
+                        hmaps_in: hmap
+                    })
+                yield ret / n_sample
 
     if os.path.exists('done'):
         return predict
@@ -178,6 +181,25 @@ def train_simple_segmentation_model(mode, duration, learning_rate=1e-3, num_filt
 
 
 @cached(train_simple_segmentation_model, version=0)
+def get_simple_segmentation_model_predictions(mode, *args, **kwargs):
+    if not os.path.exists('preds.npy'):
+        cvid = int(mode[-1])
+        names, _, zones_all = body_zone_segmentation.get_body_zones('all')
+        hmaps = threat_segmentation_models.get_augmented_hourglass_predictions(mode)
+        idx = get_train_idx('all', cvid) if mode.startswith('train') else get_valid_idx('all', cvid)
+        predict = train_simple_segmentation_model(*args, **kwargs)
+
+        preds = np.zeros((len(idx), 17))
+        for i, pred in enumerate(predict(zones_all, hmaps, idx, n_sample=16)):
+            preds[i] = pred
+
+        np.save('preds.npy', preds)
+
+    preds = np.load('preds.npy')
+    return preds
+
+
+@cached(train_simple_segmentation_model, version=0)
 def write_simple_segmentation_model_errors(mode, *args, **kwargs):
     cvid = int(mode[-1])
     names, _, zones_all = body_zone_segmentation.get_body_zones('all')
@@ -189,7 +211,8 @@ def write_simple_segmentation_model_errors(mode, *args, **kwargs):
     errors = []
     total_loss = 0
     for i, pred in zip(idx, predict(zones_all, hmaps, idx)):
-        name, label = names[i], labels[i]
+        name = names[i]
+        label = np.array(labels[name])
         loss = log_loss(pred, label)
         for i in range(17):
             errors.append((loss[i], '%s_Zone%s' % (name, i+1), pred[i], label[i]))
