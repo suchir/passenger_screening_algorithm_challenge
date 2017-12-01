@@ -197,13 +197,31 @@ def train_augmented_hourglass_cnn(mode, duration, learning_rate=1e-3, random_sca
                                    axis=-1, keep_dims=True)
             loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=labels,
                                                                           logits=logits))
+        elif loss_type.startswith('normalized'):
+            hmaps = data[..., -3:]
+            all_hmaps = tf.reduce_sum(hmaps, axis=-1, keep_dims=True)
+            loss_map = tf.nn.sigmoid_cross_entropy_with_logits(labels=all_hmaps, logits=logits)
+            hmaps = tf.concat([hmaps, 1-all_hmaps], axis=-1)
+            losses = []
+            weights = [1, 1, 1, int(loss_type.split('-')[-1])]
+            for i in range(4):
+                losses.append(weights[i] * tf.reduce_sum((hmaps[..., i:i+1] * loss_map) / 
+                              (tf.reduce_sum(hmaps[..., i:i+1]) + 1e-3)))
+            loss = tf.add_n(losses)
         else:
             labels = tf.reduce_sum(data[..., -3:], axis=-1, keep_dims=True)
             if loss_type == 'logloss':
                 loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=labels,
                                                                               logits=logits))
-            else:
+            elif loss_type == 'l2':
                 loss = tf.losses.mean_squared_error(labels, logits)
+            elif loss_type == 'linear':
+                preds = tf.sigmoid(logits)
+                loss = tf.reduce_mean(-preds*(2*labels - 1))
+            elif loss_type == 'dice':
+                preds = tf.sigmoid(logits)
+                loss = -(tf.reduce_sum(preds*labels) + 1)/\
+                        (tf.reduce_sum(labels)+tf.reduce_sum(preds) + 1)
 
     # actual predictions
     if loss_type != 'l2':
