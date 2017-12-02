@@ -20,97 +20,6 @@ import keras
 import skimage.transform
 
 
-@cached(passenger_clustering.join_augmented_aps_segmentation_data, 
-        get_augmented_hourglass_predictions, cloud_cache=True, version=0)
-def train_resnet50_fcn(mode, epochs, learning_rate=1e-3, num_layers=3, data_idx=0, downsize=2,
-                       scale=1, stack_model=False):
-    layer_idxs = [4, 37, 79, 141, 173]
-    height, width = 660//downsize, 512//downsize
-
-    input_tensor = keras.layers.Input(shape=(height, width, 3))
-    base_model = keras.applications.ResNet50(include_top=False, weights='imagenet',
-                                             input_tensor=input_tensor,
-                                             input_shape=(height, width, 3))
-
-    def resize_bilinear(images):
-        return tf.image.resize_bilinear(images, [height, width])
-
-    hmaps = []
-    for i in layer_idxs[-num_layers:]:
-        output = base_model.layers[i].output
-        if stack_model:
-            hmap = keras.layers.Convolution2D(1, (1, 1), kernel_initializer='zeros')(output)
-        else:
-            hmap = keras.layers.Convolution2D(1, (1, 1))(output)
-        hmap = keras.layers.Lambda(resize_bilinear)(hmap)
-        hmaps.append(hmap)
-
-    stack_preds = keras.layers.Input(shape=(height, width, 1))
-    if stack_model:
-        hmaps.append(stack_preds)
-    merged = keras.layers.Add()(hmaps)
-
-    preds = keras.layers.Activation('sigmoid')(merged)
-    model = keras.models.Model(inputs=[input_tensor, stack_preds], outputs=preds)
-
-    model.compile(optimizer=keras.optimizers.Adam(learning_rate), loss='binary_crossentropy')
-
-    def random_resize(images, amount=0.25):
-        _, w, h, _ = images.shape
-        pw, ph = np.random.randint(1, int(w*amount/2)), np.random.randint(1, int(h*amount/2))
-        images = np.stack([skimage.transform.resize(image, [w-2*pw, h-2*ph])
-                           for image in images / 10], axis=0) * 10
-        images = np.pad(images, [(0, 0), (pw, pw), (ph, ph), (0, 0)], 'constant')
-        return images
-
-    def data_generator(dset, preds):
-        while True:
-            for data, pred in zip(dset, preds):
-                if data_idx == 0:
-                    images = data[:, ::downsize, ::downsize, 0]
-                elif data_idx == 1:
-                    images = data[:, ::downsize, ::downsize, 0] - data[:, ::downsize, ::downsize, 1]
-                elif data_idx == 2:
-                    images = data[:, ::downsize, ::downsize, 0] - data[:, ::downsize, ::downsize, 2]
-
-                images = np.stack([images, images, images], axis=-1)
-                labels = np.sum(data[:, ::downsize, ::downsize, -3:], axis=-1, keepdims=True) / 1000
-                ret = random_resize(np.concatenate([images, labels, pred[..., 0:1]], axis=-1))
-                images, labels, pred = ret[..., :3], ret[..., 3:4], ret[..., 4:]
-
-                images *= 256
-                if data_idx == 1 or data_idx == 2:
-                    images += 128
-                images = keras.applications.imagenet_utils.preprocess_input(images)
-
-                pred = np.log(pred + 1e-6)
-
-                yield [images, pred], labels
-
-    valid_mode = mode.replace('train', 'valid')
-    _, _, dset_train = passenger_clustering.join_augmented_aps_segmentation_data(mode, 6)
-    _, _, dset_valid = passenger_clustering.join_augmented_aps_segmentation_data(valid_mode, 6)
-    preds_train = get_augmented_hourglass_predictions(mode)
-    preds_valid = get_augmented_hourglass_predictions(valid_mode)
-
-    hist = model.fit_generator(data_generator(dset_train, preds_train), 
-                               steps_per_epoch=len(dset_train),
-                               epochs=epochs,
-                               validation_data=data_generator(dset_valid, preds_valid),
-                               validation_steps=len(dset_valid))
-
-    with open('loss.txt', 'w') as f:
-        f.write(str(min(hist.history['loss'])))
-    with open('val_loss.txt', 'w') as f:
-        f.write(str(min(hist.history['val_loss'])))
-
-    plt.plot(hist.history['loss'])
-    plt.savefig('loss.png')
-    plt.plot(hist.history['val_loss'])
-    plt.savefig('val_loss.png')
-
-
-
 @cached(passenger_clustering.get_augmented_segmentation_data, dataio.get_augmented_threat_heatmaps,
         version=1)
 def train_multitask_cnn(mode, cvid, duration, weights, sanity_check=False, normalize_data=True,
@@ -428,6 +337,96 @@ def get_augmented_hourglass_predictions(mode):
     f = h5py.File('data.hdf5', 'r')
     dset = f['dset']
     return dset
+
+
+@cached(passenger_clustering.join_augmented_aps_segmentation_data, 
+        get_augmented_hourglass_predictions, cloud_cache=True, version=0)
+def train_resnet50_fcn(mode, epochs, learning_rate=1e-3, num_layers=3, data_idx=0, downsize=2,
+                       scale=1, stack_model=False):
+    layer_idxs = [4, 37, 79, 141, 173]
+    height, width = 660//downsize, 512//downsize
+
+    input_tensor = keras.layers.Input(shape=(height, width, 3))
+    base_model = keras.applications.ResNet50(include_top=False, weights='imagenet',
+                                             input_tensor=input_tensor,
+                                             input_shape=(height, width, 3))
+
+    def resize_bilinear(images):
+        return tf.image.resize_bilinear(images, [height, width])
+
+    hmaps = []
+    for i in layer_idxs[-num_layers:]:
+        output = base_model.layers[i].output
+        if stack_model:
+            hmap = keras.layers.Convolution2D(1, (1, 1), kernel_initializer='zeros')(output)
+        else:
+            hmap = keras.layers.Convolution2D(1, (1, 1))(output)
+        hmap = keras.layers.Lambda(resize_bilinear)(hmap)
+        hmaps.append(hmap)
+
+    stack_preds = keras.layers.Input(shape=(height, width, 1))
+    if stack_model:
+        hmaps.append(stack_preds)
+    merged = keras.layers.Add()(hmaps)
+
+    preds = keras.layers.Activation('sigmoid')(merged)
+    model = keras.models.Model(inputs=[input_tensor, stack_preds], outputs=preds)
+
+    model.compile(optimizer=keras.optimizers.Adam(learning_rate), loss='binary_crossentropy')
+
+    def random_resize(images, amount=0.25):
+        _, w, h, _ = images.shape
+        pw, ph = np.random.randint(1, int(w*amount/2)), np.random.randint(1, int(h*amount/2))
+        images = np.stack([skimage.transform.resize(image, [w-2*pw, h-2*ph])
+                           for image in images / 10], axis=0) * 10
+        images = np.pad(images, [(0, 0), (pw, pw), (ph, ph), (0, 0)], 'constant')
+        return images
+
+    def data_generator(dset, preds):
+        while True:
+            for data, pred in zip(dset, preds):
+                if data_idx == 0:
+                    images = data[:, ::downsize, ::downsize, 0]
+                elif data_idx == 1:
+                    images = data[:, ::downsize, ::downsize, 0] - data[:, ::downsize, ::downsize, 1]
+                elif data_idx == 2:
+                    images = data[:, ::downsize, ::downsize, 0] - data[:, ::downsize, ::downsize, 2]
+
+                images = np.stack([images, images, images], axis=-1)
+                labels = np.sum(data[:, ::downsize, ::downsize, -3:], axis=-1, keepdims=True) / 1000
+                ret = random_resize(np.concatenate([images, labels, pred[..., 0:1]], axis=-1))
+                images, labels, pred = ret[..., :3], ret[..., 3:4], ret[..., 4:]
+
+                images *= 256
+                if data_idx == 1 or data_idx == 2:
+                    images += 128
+                images = keras.applications.imagenet_utils.preprocess_input(images)
+
+                pred = np.log(pred + 1e-6)
+
+                yield [images, pred], labels
+
+    valid_mode = mode.replace('train', 'valid')
+    _, _, dset_train = passenger_clustering.join_augmented_aps_segmentation_data(mode, 6)
+    _, _, dset_valid = passenger_clustering.join_augmented_aps_segmentation_data(valid_mode, 6)
+    preds_train = get_augmented_hourglass_predictions(mode)
+    preds_valid = get_augmented_hourglass_predictions(valid_mode)
+
+    hist = model.fit_generator(data_generator(dset_train, preds_train), 
+                               steps_per_epoch=len(dset_train),
+                               epochs=epochs,
+                               validation_data=data_generator(dset_valid, preds_valid),
+                               validation_steps=len(dset_valid))
+
+    with open('loss.txt', 'w') as f:
+        f.write(str(min(hist.history['loss'])))
+    with open('val_loss.txt', 'w') as f:
+        f.write(str(min(hist.history['val_loss'])))
+
+    plt.plot(hist.history['loss'])
+    plt.savefig('loss.png')
+    plt.plot(hist.history['val_loss'])
+    plt.savefig('val_loss.png')
 
 
 @cached(passenger_clustering.get_clustered_data_and_threat_heatmaps, version=0)
