@@ -279,7 +279,7 @@ def write_hourglass_predicted_heatmaps(mode, *args, **kwargs):
                 imageio.imsave('%s_%s.png' % (names[i], j), image)
 
 
-@cached(threat_segmentation_models.train_unet_cnn, subdir='ssd', version=3)
+@cached(threat_segmentation_models.train_unet_cnn, subdir='ssd', version=4)
 def write_augmented_hourglass_predicted_heatmaps(mode, *args, **kwargs):
     predict = threat_segmentation_models.train_augmented_hourglass_cnn(*args, **kwargs)
 
@@ -289,11 +289,11 @@ def write_augmented_hourglass_predicted_heatmaps(mode, *args, **kwargs):
         if kwargs.get('loss_type') == 'density':
             preds /= preds.max()
         for i in range(16):
-            image = data[i, ..., 0]
+            image = data[i, ::2, ::2, 0]
             image = np.concatenate([image, image, image], axis=-1) / np.max(image)
             image = np.stack([np.zeros(image.shape), image, np.zeros(image.shape)], axis=-1)
-            image[:, 512:1024, 0] = np.sum(data[i, ..., -3:], axis=-1) / 1000
-            image[:, 1024:, 0] = preds[i, ...]
+            image[:, 256:512, 0] = np.sum(data[i, ::2, ::2, -3:], axis=-1) / 1000
+            image[:, 512:, 0] = preds[i, ::2, ::2]
             imageio.imsave('%s_%s_%s.png' % (int(loss*1e6), name, i), image)
 
 
