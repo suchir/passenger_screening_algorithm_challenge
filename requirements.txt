@@ -5,3 +5,4 @@ scikit-learn>=0.18.1
 tqdm>=4.14.0
 opencv-python>=3.3.0.9
 pyelastix>=1.1
+keras>=2.1.2
