@@ -85,15 +85,16 @@ def train_resnet50_fcn(mode, epochs, learning_rate=1e-3, num_layers=3, data_idx=
                                epochs=epochs, validation_data=data_generator(dset_valid),
                                validation_steps=len(dset_valid))
 
+    with open('loss.txt', 'w') as f:
+        f.write(str(min(hist.history['loss'])))
+    with open('val_loss.txt', 'w') as f:
+        f.write(str(min(hist.history['val_loss'])))
+
     plt.plot(hist.history['loss'])
     plt.savefig('loss.png')
     plt.plot(hist.history['val_loss'])
     plt.savefig('val_loss.png')
 
-    with open('loss.txt', 'w') as f:
-        f.write(str(min(hist.history['loss'])))
-    with open('val_loss.txt', 'w') as f:
-        f.write(str(min(hist.history['val_loss'])))
 
 
 @cached(passenger_clustering.get_augmented_segmentation_data, dataio.get_augmented_threat_heatmaps,
