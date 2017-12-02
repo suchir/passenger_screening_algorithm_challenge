@@ -90,7 +90,7 @@ def train_resnet50_fcn(mode, epochs, learning_rate=1e-3, num_layers=3, data_idx=
     plt.plot(hist.history['val_loss'])
     plt.savefig('val_loss.png')
 
-    with open('loss.txt', 'r') as f:
+    with open('loss.txt', 'w') as f:
         f.write(str(min(hist.history['loss'])))
     with open('val_loss.txt', 'w') as f:
         f.write(str(min(hist.history['val_loss'])))
