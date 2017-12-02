@@ -135,7 +135,7 @@ def train_multitask_cnn(mode, cvid, duration, weights, sanity_check=False, norma
 
 
 
-@cached(passenger_clustering.join_augmented_aps_segmentation_data, cloud_cache=True, version=2)
+@cached(passenger_clustering.join_augmented_aps_segmentation_data, cloud_cache=True, version=4)
 def train_augmented_hourglass_cnn(mode, duration, learning_rate=1e-3, random_scale=False,
                                   drop_loss=0, downsample=True, num_filters=64,
                                   loss_type='logloss', global_scale=1, scale_amount=0.25,
@@ -146,13 +146,14 @@ def train_augmented_hourglass_cnn(mode, duration, learning_rate=1e-3, random_sca
     tf.reset_default_graph()
 
     data_in = tf.placeholder(tf.float32, [None, height, width, filters])
+    data, labels = data_in[..., :-3], data_in[..., -3:]
 
     # random resize
     size = tf.random_uniform([2], minval=int((1-scale_amount)*res), maxval=res, dtype=tf.int32)
     h_pad, w_pad = (res-size[0])//2, (res-size[1])//2
     padding = [[0, 0], [h_pad, res-size[0]-h_pad], [w_pad, res-size[1]-w_pad]]
-    data = tf.image.resize_images(data_in, size)
-    data = tf.stack([tf.pad(data[..., i], padding) for i in range(filters)], axis=-1)
+    data = tf.image.resize_images(data, size)
+    data = tf.stack([tf.pad(data[..., i], padding) for i in range(4)], axis=-1)
 
     # random left-right flip
     flip_lr = tf.random_uniform([], maxval=2, dtype=tf.int32)
@@ -171,11 +172,16 @@ def train_augmented_hourglass_cnn(mode, duration, learning_rate=1e-3, random_sca
     else:
         scale = 10 * global_scale
     label_fix = 1/1000  # screw-up
-    data = tf.concat([data[..., :-3] * scale, data[..., -3:] * label_fix], axis=-1)
+    data *= scale
+    labels *= label_fix
 
     # hourglass network on first four filters
-    _, logits = tf_models.hourglass_cnn(data[..., :-3], res, 4, res, num_filters,
+    _, logits = tf_models.hourglass_cnn(data, res, 4, res, num_filters,
                                         downsample=downsample)
+
+    logits = tf.cond(flip_lr > 0, lambda: logits[:, :, ::-1, :], lambda: logits)
+    logits = logits[:, padding[1][0]:-padding[1][1]-1, padding[2][0]:-padding[2][0]-1, :]
+    logits = tf.image.resize_images(logits, [height, width])
 
     # loss on segmentations
     if drop_loss:
@@ -209,7 +215,7 @@ def train_augmented_hourglass_cnn(mode, duration, learning_rate=1e-3, random_sca
                               (tf.reduce_sum(hmaps[..., i:i+1]) + 1e-3)))
             loss = tf.add_n(losses)
         else:
-            labels = tf.reduce_sum(data[..., -3:], axis=-1, keep_dims=True)
+            labels = tf.reduce_sum(labels, axis=-1, keep_dims=True)
             if loss_type == 'logloss':
                 loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=labels,
                                                                               logits=logits))
@@ -228,9 +234,7 @@ def train_augmented_hourglass_cnn(mode, duration, learning_rate=1e-3, random_sca
         preds = tf.sigmoid(logits)
     else:
         preds = logits
-    preds = tf.cond(flip_lr > 0, lambda: preds[:, :, ::-1, :], lambda: preds)
-    preds = preds[:, padding[1][0]:-padding[1][1]-1, padding[2][0]:-padding[2][0]-1, :]
-    preds = tf.squeeze(tf.image.resize_images(preds, [height, width]))
+    preds = tf.squeeze(preds)
 
     # optimization
     train_summary = tf.summary.scalar('train_loss', loss)
@@ -310,7 +314,7 @@ def train_augmented_hourglass_cnn(mode, duration, learning_rate=1e-3, random_sca
     return predict
 
 
-@cached(train_augmented_hourglass_cnn, cloud_cache=True, version=1)
+@cached(train_augmented_hourglass_cnn, subdir='ssd', cloud_cache=True, version=1)
 def get_augmented_hourglass_predictions(mode):
     if not os.path.exists('done'):
         _, _, dset_in = passenger_clustering.join_augmented_aps_segmentation_data(mode, 6)
