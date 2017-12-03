@@ -342,7 +342,7 @@ def get_augmented_hourglass_predictions(mode):
 @cached(passenger_clustering.join_augmented_aps_segmentation_data, 
         get_augmented_hourglass_predictions, cloud_cache=True, version=0)
 def train_resnet50_fcn(mode, epochs, learning_rate=1e-3, num_layers=3, data_idx=0, downsize=2,
-                       scale=1, stack_model=False):
+                       scale=1, stack_model=False, trainable=True):
     layer_idxs = [4, 37, 79, 141, 173]
     height, width = 660//downsize, 512//downsize
 
@@ -350,6 +350,10 @@ def train_resnet50_fcn(mode, epochs, learning_rate=1e-3, num_layers=3, data_idx=
     base_model = keras.applications.ResNet50(include_top=False, weights='imagenet',
                                              input_tensor=input_tensor,
                                              input_shape=(height, width, 3))
+
+    if not trainable:
+        for layer in base_model.layers:
+            layer.trainable = False
 
     def resize_bilinear(images):
         return tf.image.resize_bilinear(images, [height, width])
