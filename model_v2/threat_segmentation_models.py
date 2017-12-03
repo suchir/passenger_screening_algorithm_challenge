@@ -343,7 +343,7 @@ def get_augmented_hourglass_predictions(mode):
         get_augmented_hourglass_predictions, cloud_cache=True, version=0)
 def train_resnet50_fcn(mode, epochs, learning_rate=1e-3, num_layers=3, data_idx=0, downsize=2,
                        scale=1, stack_model=False, trainable=True, num_filters=0,
-                       fix_first=0):
+                       fix_first=0, use_rotation=False):
     layer_idxs = [4, 37, 79, 141, 173]
     height, width = 660//downsize, 512//downsize
 
@@ -392,6 +392,12 @@ def train_resnet50_fcn(mode, epochs, learning_rate=1e-3, num_layers=3, data_idx=
         images = np.stack([skimage.transform.resize(image, [w-2*pw, h-2*ph])
                            for image in images / 10], axis=0) * 10
         images = np.pad(images, [(0, 0), (pw, pw), (ph, ph), (0, 0)], 'constant')
+
+        if use_rotation:
+            angle = random.random() * 2 * math.pi
+            images = np.stack([skimage.transform.rotate(image, angle) for
+                               image in images / 10], axis=0) * 10
+
         return images
 
     def data_generator(dset, preds):
