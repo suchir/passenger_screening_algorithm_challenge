@@ -430,14 +430,9 @@ def train_resnet50_fcn(mode, epochs, learning_rate=1e-3, num_layers=3, data_idx=
                                validation_steps=len(dset_valid))
 
     with open('loss.txt', 'w') as f:
-        f.write(str(min(hist.history['loss'])))
+        f.write(''.join(str(x) for x in hist.history['loss']))
     with open('val_loss.txt', 'w') as f:
-        f.write(str(min(hist.history['val_loss'])))
-
-    plt.plot(hist.history['loss'])
-    plt.savefig('loss.png')
-    plt.plot(hist.history['val_loss'])
-    plt.savefig('val_loss.png')
+        f.write(''.join(str(x) for x in hist.history['val_loss']))
 
 
 @cached(passenger_clustering.get_clustered_data_and_threat_heatmaps, version=0)
