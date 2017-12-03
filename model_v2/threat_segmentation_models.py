@@ -368,7 +368,7 @@ def train_resnet50_fcn(mode, epochs, learning_rate=1e-3, num_layers=3, data_idx=
                 hmap = keras.layers.Convolution2D(num_filters, (1, 1), activation='relu')(output)
             else:
                 hmap = output
-            hmap = keras.layers.Convolution2D(1, (1, 1))(output)
+            hmap = keras.layers.Convolution2D(1, (1, 1))(hmap)
         hmap = keras.layers.Lambda(resize_bilinear)(hmap)
         hmaps.append(hmap)
 
