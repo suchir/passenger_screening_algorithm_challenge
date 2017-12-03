@@ -342,7 +342,7 @@ def get_augmented_hourglass_predictions(mode):
 @cached(passenger_clustering.join_augmented_aps_segmentation_data, 
         get_augmented_hourglass_predictions, cloud_cache=True, version=0)
 def train_resnet50_fcn(mode, epochs, learning_rate=1e-3, num_layers=3, data_idx=0, downsize=2,
-                       scale=1, stack_model=False, trainable=True):
+                       scale=1, stack_model=False, trainable=True, num_filters=0):
     layer_idxs = [4, 37, 79, 141, 173]
     height, width = 660//downsize, 512//downsize
 
@@ -364,6 +364,10 @@ def train_resnet50_fcn(mode, epochs, learning_rate=1e-3, num_layers=3, data_idx=
         if stack_model:
             hmap = keras.layers.Convolution2D(1, (1, 1), kernel_initializer='zeros')(output)
         else:
+            if num_filters > 0:
+                hmap = keras.layers.Convolution2D(num_filters, (1, 1), activation='relu')(output)
+            else:
+                hmap = output
             hmap = keras.layers.Convolution2D(1, (1, 1))(output)
         hmap = keras.layers.Lambda(resize_bilinear)(hmap)
         hmaps.append(hmap)
