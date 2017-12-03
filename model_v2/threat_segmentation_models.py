@@ -385,14 +385,17 @@ def train_resnet50_fcn(mode, epochs, learning_rate=1e-3, num_layers=3, data_idx=
     def data_generator(dset, preds):
         while True:
             for data, pred in zip(dset, preds):
-                if data_idx == 0:
-                    images = data[:, ::downsize, ::downsize, 0]
-                elif data_idx == 1:
-                    images = data[:, ::downsize, ::downsize, 0] - data[:, ::downsize, ::downsize, 1]
-                elif data_idx == 2:
-                    images = data[:, ::downsize, ::downsize, 0] - data[:, ::downsize, ::downsize, 2]
+                if data_idx == 'all':
+                    images = data[:, ::downsize, ::downsize, :3]
+                else:
+                    if data_idx == 0:
+                        images = data[:, ::downsize, ::downsize, 0]
+                    elif data_idx == 1:
+                        images = data[:, ::downsize, ::downsize, 0] - data[:, ::downsize, ::downsize, 1]
+                    elif data_idx == 2:
+                        images = data[:, ::downsize, ::downsize, 0] - data[:, ::downsize, ::downsize, 2]
+                    images = np.stack([images, images, images], axis=-1)
 
-                images = np.stack([images, images, images], axis=-1)
                 labels = np.sum(data[:, ::downsize, ::downsize, -3:], axis=-1, keepdims=True) / 1000
                 ret = random_resize(np.concatenate([images, labels, pred[..., 0:1]], axis=-1))
                 images, labels, pred = ret[..., :3], ret[..., 3:4], ret[..., 4:]
