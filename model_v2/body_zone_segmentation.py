@@ -213,7 +213,7 @@ def train_mask_segmentation_cnn(duration, learning_rate=1e-3, model='logistic', 
     return predict
 
 
-@cached(train_mask_segmentation_cnn, get_a3d_projection_data, cloud_cache=True,
+@cached(train_mask_segmentation_cnn, get_a3d_projection_data, cloud_cache=False,
         subdir='ssd', version=0)
 def get_depth_maps(mode):
     if not os.path.exists('done'):
@@ -456,7 +456,7 @@ def spatial_pool_zones(gen):
     yield from flush_batch()
 
 
-@cached(train_zone_segmentation_cnn, get_depth_maps, subdir='ssd', cloud_cache=True, version=5)
+@cached(train_zone_segmentation_cnn, get_depth_maps, subdir='ssd', cloud_cache=False, version=5)
 def get_body_zones(mode):
     if not os.path.exists('done'):
         names, labels, dset_in = get_depth_maps(mode)
