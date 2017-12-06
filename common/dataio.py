@@ -188,14 +188,14 @@ def get_cv_splits(n_split):
 def get_data(mode, dtype):
     assert mode in ('sample', 'sample_large', 'all', 'sample_train', 'train', 'sample_valid',
                     'valid', 'sample_test', 'test', 'train-0', 'train-1', 'train-2', 'train-3',
-                    'train-4', 'valid-0', 'valid-1', 'valid-2', 'valid-3', 'valid-4')
+                    'train-4', 'valid-0', 'valid-1', 'valid-2', 'valid-3', 'valid-4', 'public_test')
     assert dtype in ('aps', 'a3daps', 'a3d')
     with read_input_dir('competition_data/%s' % dtype):
         files = sorted(glob.glob('*'))
 
     labels = get_train_labels()
     has_label = lambda file: file.split('.')[0] in labels
-    if mode.endswith('test'):
+    if mode == 'public_test':
         files = [file for file in files if not has_label(file)]
     else:
         files = [file for file in files if has_label(file)]
@@ -240,7 +240,7 @@ def get_data(mode, dtype):
                 raise StopIteration
             file = self.files[self.index].replace('\\', '/')
             name = file.split('/')[-1].split('.')[0]
-            ret = name, labels.get(name), read_data(file)
+            ret = name, labels.get(name, [0] * 17), read_data(file)
             self.index += 1
             return ret
 
