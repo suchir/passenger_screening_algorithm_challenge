@@ -84,22 +84,65 @@ def train_simple_segmentation_model(mode, duration, learning_rate=1e-3, num_filt
         weights = tf.get_variable('weights', [17], initializer=tf.constant_initializer(0))
         logits = prod*weights + bias
     else:
-        for _ in range(num_layers):
-            prod = tf.concat([prod[:, 15:16, :], prod, prod[:, 0:1, :]], axis=1)
-            prod = tf.layers.conv1d(prod, num_filters, 3, activation=tf.nn.relu)
-        prod = tf.reduce_max(prod, axis=1)
-        prod = tf.layers.dense(prod, 1, kernel_initializer=tf.zeros_initializer(),
-                                        bias_initializer=tf.constant_initializer(-2.24302))
-        logits = tf.squeeze(prod)
+        def circular_conv(x, num_layers, num_filters):
+            for _ in range(num_layers):
+                x = tf.concat([x[:, 15:16, :], x, x[:, 0:1, :]], axis=1)
+                x = tf.layers.conv1d(x, num_filters, 3, activation=tf.nn.relu)
+            x = tf.layers.conv1d(x, 1, 1)
+            return x
+
+        logits = circular_conv(prod, num_layers, num_filters)
 
         if per_zone == 'bias':
+            logits = tf.reduce_max(logits, axis=(1, 2))
             logits *= tf.get_variable('zone_weights', [17], initializer=tf.constant_initializer(1))
             logits += tf.get_variable('zone_bias', [17], initializer=tf.constant_initializer(0))
         elif per_zone == 'matmul':
+            logits = tf.reduce_max(logits, axis=1)
             logits = tf.matmul(tf.get_variable('zone_mat', [17, 17], initializer=tf.constant_initializer(np.eye(17))),
-                               tf.expand_dims(logits, -1))
+                               logits)
             logits += tf.get_variable('zone_bias', [17], initializer=tf.constant_initializer(0))
             logits = tf.squeeze(logits)
+        elif per_zone == 'graph':
+            def graph_refinement(a1, a2, num_layers, num_filters):
+                x = tf.expand_dims(tf.concat([a1, a2], axis=-1), 0)
+                with tf.variable_scope('graph'):
+                    x = circular_conv(x, num_layers, num_filters)
+                return tf.reduce_max(x)
+
+            adj = [
+                [2],
+                [1],
+                [4],
+                [3],
+                [6, 7],
+                [5, 7, 17],
+                [5, 6, 17],
+                [6, 9, 11],
+                [8, 10],
+                [7, 9, 12],
+                [8, 13],
+                [10, 14],
+                [11, 15],
+                [12, 16],
+                [13],
+                [14],
+                [6, 7]
+            ]
+
+            logits_list = []
+            with tf.variable_scope('apply_graph') as scope:
+                for i in range(17):
+                    cur_logits = []
+                    for j in adj[i]:
+                        cur_logits.append(graph_refinement(logits[i], logits[j-1], 1,
+                                                           1))
+                        scope.reuse_variables()
+                    logits_list.append(tf.reduce_min(tf.stack(cur_logits)))
+
+            logits = tf.stack(logits_list)
+        else:
+            logits = tf.reduce_max(logits, axis=(1, 2))
 
     loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=labels_in, logits=logits))
     preds = tf.sigmoid(logits)

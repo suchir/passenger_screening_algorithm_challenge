@@ -302,6 +302,28 @@ def write_augmented_hourglass_predicted_heatmaps(mode, model, *args, **kwargs):
             imageio.imsave('%s_%s_%s.png' % (int(loss*1e6), name, i), image)
 
 
+@cached(threat_segmentation_models.get_multitask_cnn_predictions, subdir='ssd', version=0)
+def write_multitask_cnn_predictions(mode, n_split, lid, normalize=False):
+    preds = threat_segmentation_models.get_multitask_cnn_predictions(mode, n_split, lid)
+    names, _, dset = dataio.get_aps_data_hdf5(mode)
+    labels = dataio.get_threat_heatmaps(mode)
+
+    for name, data, label, pred in zip(tqdm.tqdm(names), dset, labels, preds):
+        if normalize:
+            label /= label.max()
+            pred /= pred.max()
+        data = data[::2, ::2]
+        label = label[::2, ::2]
+        for i in range(16):
+            image = data[..., i]
+            image = np.concatenate([image] * 3, axis=-1) / np.max(image)
+            image = np.stack([np.zeros(image.shape), image, np.zeros(image.shape)], axis=-1)
+            image[:, 256:512, 0] = np.sum(label[..., i, :], axis=-1)
+            image[:, 512:, 0] = pred[i]
+            imageio.imsave('%s_%s.png' % (name, i), image)
+
+
+
 @cached(passenger_clustering.get_distance_matrix, version=0)
 def plot_distance_matrix_accuracy(mode, max_near):
     dmat = passenger_clustering.get_distance_matrix(mode)
