@@ -29,7 +29,6 @@ def train_multitask_cnn(mode, cvid, duration, weights, sanity_check=False, norma
     tf.reset_default_graph()
 
     data_in = tf.placeholder(tf.float32, [angles, height, width, filters])
-    moments_in = tf.placeholder(tf.float32, [8, 2])
     means_in = tf.placeholder(tf.float32, [6])
 
     # random resize
@@ -47,11 +46,6 @@ def train_multitask_cnn(mode, cvid, duration, weights, sanity_check=False, norma
     labels = data[..., 8:]
     if sanity_check:
         data = data[..., :4] * sanity_check
-    elif normalize_data:
-        data_list = []
-        for i in range(8):
-            data_list.append((data[..., i] - moments_in[i, 0]) / moments_in[i, 1])
-        data = tf.stack(data_list, axis=-1)
     else:
         data = data[..., :8] * scale_data
 
@@ -83,35 +77,50 @@ def train_multitask_cnn(mode, cvid, duration, weights, sanity_check=False, norma
     saver = tf.train.Saver()
     model_path = os.getcwd() + '/model.ckpt'
 
-    dset_all, moments_all = passenger_clustering.get_augmented_segmentation_data(mode, 10)
+    def predict(dset, n_sample=16):
+        with tf.Session() as sess:
+            saver.restore(sess, model_path)
+            for data in tqdm.tqdm(dset):
+                pred = np.zeros((angles, height, width, 6))
+                data = np.concatenate([data[:, ::downsize, ::downsize],
+                                       np.zeros((angles, height, width, 6))], axis=-1)
+                for _ in range(n_sample):
+                    pred += sess.run(preds, feed_dict={
+                        data_in: data,
+                    })
+                yield pred / n_sample
+
+    if os.path.exists('done'):
+        return predict
+
+    dset_all, _ = passenger_clustering.get_augmented_segmentation_data(mode, 10)
     labels_all, means_all = dataio.get_augmented_threat_heatmaps(mode)
     train_idx, valid_idx = get_train_idx(mode, cvid), get_valid_idx(mode, cvid)
 
     with read_log_dir():
         writer = tf.summary.FileWriter(os.getcwd())
 
-    def data_gen(dset, moments, labels, means, idx):
+    def data_gen(dset, labels, means, idx):
         for i in tqdm.tqdm(idx):
             data = np.concatenate([dset[i], labels[i]], axis=-1)
             yield {
                 data_in: data[:, ::downsize, ::downsize],
-                moments_in: moments,
                 means_in: means
             }
 
     def eval_model(sess):
         losses = []
-        for data in data_gen(dset_all, moments_all, labels_all, means_all, valid_idx):
+        for data in data_gen(dset_all, labels_all, means_all, valid_idx):
             cur_loss = sess.run(loss, feed_dict=data)
             losses.append(cur_loss)
-        return np.mean(losses)
+        return np.mean(losses) if losses else 0
 
     def train_model(sess):
         it = 0
         t0 = time.time()
         best_valid_loss = None
         while time.time() - t0 < duration * 3600:
-            for data in data_gen(dset_all, moments_all, labels_all, means_all, train_idx):
+            for data in data_gen(dset_all, labels_all, means_all, train_idx):
                 cur_summaries = sess.run(summaries + [train_step], feed_dict=data)
                 cur_summaries.pop()
                 for summary in cur_summaries:
@@ -123,7 +132,7 @@ def train_multitask_cnn(mode, cvid, duration, weights, sanity_check=False, norma
             cur_valid_summary.value.add(tag='valid_loss', simple_value=valid_loss)
             writer.add_summary(cur_valid_summary, it)
 
-            if best_valid_loss is None or valid_loss < best_valid_loss:
+            if best_valid_loss is None or valid_loss <= best_valid_loss:
                 best_valid_loss = valid_loss
                 saver.save(sess, model_path)
 
@@ -135,6 +144,26 @@ def train_multitask_cnn(mode, cvid, duration, weights, sanity_check=False, norma
 
     return predict
 
+
+@cached(train_multitask_cnn, subdir='ssd', cloud_cache=True, version=0)
+def get_multitask_cnn_predictions(mode, n_split, lid):
+    if not os.path.exists('done'):
+        f = h5py.File('data.hdf5', 'w')
+        dset_in, _ = passenger_clustering.get_augmented_segmentation_data(mode, n_split)
+        dset = f.create_dataset('dset', (len(dset_in), 16, 330, 256, 1))
+
+        weights = tuple(int(i == lid) for i in range(6))
+        predict = train_multitask_cnn('all', 0, 24, weights, normalize_data=False,
+                                      num_filters=128, downsize=2)
+        for i, pred in enumerate(predict(dset_in)):
+            dset[i, ..., lid] = pred[..., lid]
+
+        f.close()
+        open('done', 'w').close()
+
+    f = h5py.File('data.hdf5', 'r')
+    dset = f['dset']
+    return dset
 
 
 @cached(passenger_clustering.join_augmented_aps_segmentation_data, cloud_cache=True, version=4)
