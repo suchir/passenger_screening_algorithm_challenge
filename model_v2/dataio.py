@@ -53,7 +53,7 @@ def get_threat_heatmaps(mode):
     return th
 
 
-@cached(get_threat_heatmaps, version=7, subdir='ssd', cloud_cache=True)
+@cached(get_threat_heatmaps, version=8, subdir='ssd', cloud_cache=True)
 def get_augmented_threat_heatmaps(mode):
     if not os.path.exists('done'):
         th_in = get_threat_heatmaps(mode)
@@ -80,15 +80,12 @@ def get_augmented_threat_heatmaps(mode):
                         continue
                     M = skimage.measure.moments(cur.astype('double'))
                     xb, yb = M[0, 1]/M[0, 0], M[1, 0]/M[0, 0]
-                    u20 = M[2, 0]/M[0, 0] - yb**2
-                    u02 = M[0, 2]/M[0, 0] - xb**2
-                    u11 = M[1, 1]/M[0, 0] - xb*yb
-                    cov = np.array([[u02, u11], [u11, u20]])
+                    cov = np.array([[16, 0], [0, 16]])
                     covinv = np.linalg.inv(cov)
                     mean = np.array([xb, yb])
                     gx, gy = np.meshgrid(np.arange(512), np.arange(660))
                     g = np.reshape(np.stack([gy, gx], axis=-1), (-1, 2))
-                    g = np.exp(-2*np.sum((g-mean).dot(covinv)*(g-mean), axis=1))
+                    g = np.exp(-0.5*np.sum((g-mean).dot(covinv)*(g-mean), axis=1))
                     g = np.reshape(g, (660, 512))
                     ret[i, ..., 0] += g / np.max(g)
                     ret[i, ..., 1] += g / np.sum(g)
