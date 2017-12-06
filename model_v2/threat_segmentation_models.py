@@ -150,13 +150,13 @@ def get_multitask_cnn_predictions(mode, n_split, lid):
     if not os.path.exists('done'):
         f = h5py.File('data.hdf5', 'w')
         dset_in, _ = passenger_clustering.get_augmented_segmentation_data(mode, n_split)
-        dset = f.create_dataset('dset', (len(dset_in), 16, 330, 256, 1))
+        dset = f.create_dataset('dset', (len(dset_in), 16, 330, 256))
 
         weights = tuple(int(i == lid) for i in range(6))
         predict = train_multitask_cnn('all', -1, 12, weights, normalize_data=False,
                                       num_filters=128, downsize=2)
         for i, pred in enumerate(predict(dset_in)):
-            dset[i, ..., lid] = pred[..., lid]
+            dset[i] = pred[..., lid]
 
         f.close()
         open('done', 'w').close()
