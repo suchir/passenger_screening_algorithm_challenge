@@ -91,6 +91,18 @@ def hourglass_cnn(x, in_res, min_res, out_res, num_filters, num_output=1, downsa
     return x, y
 
 
+def cnn_1d(x, num_filters, num_layers):
+    for layer in range(num_layers):
+        x = tf.layers.conv1d(x, num_filters, 3, padding='same', activation=tf.nn.relu)
+        x = tf.layers.max_pooling1d(x, 2, 2)
+
+    x = tf.reduce_max(x, axis=1, keep_dims=True)
+    x = tf.layers.conv1d(x, 1, 1)
+
+    x = tf.squeeze(x)
+    return x
+
+
 def random_uniform_noise(res, z, default):
     noise = tf.Variable(np.zeros((res, res)), dtype=tf.float32)
     cur_res = res

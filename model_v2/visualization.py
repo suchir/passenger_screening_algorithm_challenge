@@ -279,21 +279,26 @@ def write_hourglass_predicted_heatmaps(mode, *args, **kwargs):
                 imageio.imsave('%s_%s.png' % (names[i], j), image)
 
 
-@cached(threat_segmentation_models.train_unet_cnn, subdir='ssd', version=4)
-def write_augmented_hourglass_predicted_heatmaps(mode, *args, **kwargs):
-    predict = threat_segmentation_models.train_augmented_hourglass_cnn(*args, **kwargs)
+@cached(threat_segmentation_models.train_unet_cnn, subdir='ssd', version=5)
+def write_augmented_hourglass_predicted_heatmaps(mode, model, *args, **kwargs):
+    if model == 'hourglass':
+        predict = threat_segmentation_models.train_augmented_hourglass_cnn(*args, **kwargs)
+    else:
+        predict = threat_segmentation_models.train_resnet50_fcn(*args, **kwargs)
 
     names, _, dset = passenger_clustering.join_augmented_aps_segmentation_data(mode, 6)
 
     for name, data, (preds, loss) in zip(names, dset, predict(dset)):
         if kwargs.get('loss_type') == 'density':
             preds /= preds.max()
+        if preds.shape[1] == 660:
+            preds = preds[:, ::2, ::2]
         for i in range(16):
             image = data[i, ::2, ::2, 0]
             image = np.concatenate([image, image, image], axis=-1) / np.max(image)
             image = np.stack([np.zeros(image.shape), image, np.zeros(image.shape)], axis=-1)
             image[:, 256:512, 0] = np.sum(data[i, ::2, ::2, -3:], axis=-1) / 1000
-            image[:, 512:, 0] = preds[i, ::2, ::2]
+            image[:, 512:, 0] = preds[i]
             imageio.imsave('%s_%s_%s.png' % (int(loss*1e6), name, i), image)
 
 

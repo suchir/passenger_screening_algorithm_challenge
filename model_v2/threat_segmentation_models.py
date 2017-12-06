@@ -23,8 +23,8 @@ import skimage.transform
 @cached(passenger_clustering.get_augmented_segmentation_data, dataio.get_augmented_threat_heatmaps,
         version=1)
 def train_multitask_cnn(mode, cvid, duration, weights, sanity_check=False, normalize_data=True,
-                        scale_data=1, num_filters=64):
-    angles, height, width, res, filters = 16, 660, 512, 512, 14
+                        scale_data=1, num_filters=64, downsize=1):
+    angles, height, width, res, filters = 16, 660//downsize, 512//downsize, 512//downsize, 14
 
     tf.reset_default_graph()
 
@@ -94,7 +94,7 @@ def train_multitask_cnn(mode, cvid, duration, weights, sanity_check=False, norma
         for i in tqdm.tqdm(idx):
             data = np.concatenate([dset[i], labels[i]], axis=-1)
             yield {
-                data_in: data,
+                data_in: data[:, ::downsize, ::downsize],
                 moments_in: moments,
                 means_in: means
             }
@@ -342,8 +342,8 @@ def get_augmented_hourglass_predictions(mode):
 @cached(passenger_clustering.join_augmented_aps_segmentation_data, 
         get_augmented_hourglass_predictions, cloud_cache=True, version=0)
 def train_resnet50_fcn(mode, epochs, learning_rate=1e-3, num_layers=3, data_idx=0, downsize=2,
-                       scale=1, stack_model=False, trainable=True, num_filters=0,
-                       fix_first=0, use_rotation=False):
+                       scale=1, trainable=True, num_filters=0,
+                       fix_first=0, use_rotation=False, random_scale=0):
     layer_idxs = [4, 37, 79, 141, 173]
     height, width = 660//downsize, 512//downsize
 
@@ -365,24 +365,18 @@ def train_resnet50_fcn(mode, epochs, learning_rate=1e-3, num_layers=3, data_idx=
     hmaps = []
     for i in layer_idxs[-num_layers:]:
         output = base_model.layers[i].output
-        if stack_model:
-            hmap = keras.layers.Convolution2D(1, (1, 1), kernel_initializer='zeros')(output)
+        if num_filters > 0:
+            hmap = keras.layers.Convolution2D(num_filters, (1, 1), activation='relu')(output)
         else:
-            if num_filters > 0:
-                hmap = keras.layers.Convolution2D(num_filters, (1, 1), activation='relu')(output)
-            else:
-                hmap = output
-            hmap = keras.layers.Convolution2D(1, (1, 1))(hmap)
+            hmap = output
+        hmap = keras.layers.Convolution2D(1, (1, 1))(hmap)
         hmap = keras.layers.Lambda(resize_bilinear)(hmap)
         hmaps.append(hmap)
 
-    stack_preds = keras.layers.Input(shape=(height, width, 1))
-    if stack_model:
-        hmaps.append(stack_preds)
     merged = keras.layers.Add()(hmaps)
 
     preds = keras.layers.Activation('sigmoid')(merged)
-    model = keras.models.Model(inputs=[input_tensor, stack_preds], outputs=preds)
+    model = keras.models.Model(inputs=input_tensor, outputs=preds)
 
     model.compile(optimizer=keras.optimizers.Adam(learning_rate), loss='binary_crossentropy')
 
@@ -398,11 +392,11 @@ def train_resnet50_fcn(mode, epochs, learning_rate=1e-3, num_layers=3, data_idx=
             images = np.stack([skimage.transform.rotate(image, angle) for
                                image in images / 10], axis=0) * 10
 
-        return images
+        return images, (pw, ph)
 
-    def data_generator(dset, preds):
+    def data_generator(dset):
         while True:
-            for data, pred in zip(dset, preds):
+            for data in dset:
                 if data_idx == 'all':
                     images = data[:, ::downsize, ::downsize, :3]
                 else:
@@ -415,29 +409,50 @@ def train_resnet50_fcn(mode, epochs, learning_rate=1e-3, num_layers=3, data_idx=
                     images = np.stack([images, images, images], axis=-1)
 
                 labels = np.sum(data[:, ::downsize, ::downsize, -3:], axis=-1, keepdims=True) / 1000
-                ret = random_resize(np.concatenate([images, labels, pred[..., 0:1]], axis=-1))
-                images, labels, pred = ret[..., :3], ret[..., 3:4], ret[..., 4:]
+                ret, _ = random_resize(np.concatenate([images, labels], axis=-1))
+                images, labels = ret[..., :3], ret[..., 3:]
+                r1, r2 = random.random()*random_scale, random.random()*random_scale
+                images = images*(1+r1-random_scale/2) + r2 - random_scale/2
 
                 images *= 256
                 if data_idx == 1 or data_idx == 2:
                     images += 128
                 images = keras.applications.imagenet_utils.preprocess_input(images)
 
-                pred = np.log(pred + 1e-6)
+                yield images, labels
 
-                yield [images, pred], labels
+    model_path = os.getcwd() + '/model.h5'
+
+    def predict(dset, n_sample=16):
+        model = keras.models.load_model(model_path, custom_objects={'tf': tf})
+        for data in tqdm.tqdm(dset):
+            ret = np.zeros((16, height, width))
+            for _ in range(n_sample):
+                images = data[:, ::downsize, ::downsize, 0]
+                images = np.stack([images] * 3, axis=-1)
+                images, (pw, ph) = random_resize(images)
+                images = keras.applications.imagenet_utils.preprocess_input(images * 256)
+                preds = model.predict(images)
+                preds = preds[:, pw:-pw, ph:-ph, :]
+                preds = np.stack([skimage.transform.resize(pred, [height, width])
+                                  for pred in preds])
+                ret += preds[..., 0]
+            yield ret / n_sample, 0
+
+    if os.path.exists('model.h5'):
+        return predict
 
     valid_mode = mode.replace('train', 'valid')
     _, _, dset_train = passenger_clustering.join_augmented_aps_segmentation_data(mode, 6)
     _, _, dset_valid = passenger_clustering.join_augmented_aps_segmentation_data(valid_mode, 6)
-    preds_train = get_augmented_hourglass_predictions(mode)
-    preds_valid = get_augmented_hourglass_predictions(valid_mode)
 
-    hist = model.fit_generator(data_generator(dset_train, preds_train), 
+    hist = model.fit_generator(data_generator(dset_train), 
                                steps_per_epoch=len(dset_train),
                                epochs=epochs,
-                               validation_data=data_generator(dset_valid, preds_valid),
+                               validation_data=data_generator(dset_valid),
                                validation_steps=len(dset_valid))
+
+    model.save('model.h5')
 
     with open('loss.txt', 'w') as f:
         f.write(''.join(str(x) for x in hist.history['loss']))
