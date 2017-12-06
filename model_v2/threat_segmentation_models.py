@@ -153,7 +153,7 @@ def get_multitask_cnn_predictions(mode, n_split, lid):
         dset = f.create_dataset('dset', (len(dset_in), 16, 330, 256, 1))
 
         weights = tuple(int(i == lid) for i in range(6))
-        predict = train_multitask_cnn('all', 0, 24, weights, normalize_data=False,
+        predict = train_multitask_cnn('all', -1, 12, weights, normalize_data=False,
                                       num_filters=128, downsize=2)
         for i, pred in enumerate(predict(dset_in)):
             dset[i, ..., lid] = pred[..., lid]
