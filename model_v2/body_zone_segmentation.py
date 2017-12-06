@@ -50,7 +50,7 @@ def get_a3d_projection_data(mode, percentile):
 
         with tf.Session() as sess:
             sess.run(tf.global_variables_initializer())
-            for i, (_, _, data) in enumerate(get_data(mode, 'a3d')):
+            for i, (_, _, data) in enumerate(tqdm.tqdm(get_data(mode, 'a3d'))):
                 data = (data[::2,::2,::2]+data[::2,::2,1::2]+data[::2,1::2,::2]+
                         data[::2,1::2,1::2]+data[1::2,::2,::2]+data[1::2,::2,1::2]+
                         data[1::2,1::2,::2]+data[1::2,1::2,1::2])/8
@@ -60,14 +60,15 @@ def get_a3d_projection_data(mode, percentile):
                                            dset_in[i, 1::2, ::2, j]+dset_in[i, 1::2, 1::2, j])
 
 
+        f.close()
         with open('pkl', 'wb') as f:
             pickle.dump((names, labels), f)
         open('done', 'w').close()
-    else:
-        with open('pkl', 'rb') as f:
-            names, labels = pickle.load(f)
-        f = h5py.File('data.hdf5', 'r')
-        dset = f['dset']
+
+    with open('pkl', 'rb') as f:
+        names, labels = pickle.load(f)
+    f = h5py.File('data.hdf5', 'r')
+    dset = f['dset']
     return names, labels, dset
 
 
@@ -91,14 +92,15 @@ def get_mask_training_data():
                 dset[idx, ..., :-1] = dset_in[idx, angle]
                 dset[idx, ..., -1] = mask
 
+        f.close()
         with open('pkl', 'wb') as f:
             pickle.dump((names, labels), f)
         open('done', 'w').close()
-    else:
-        with open('pkl', 'rb') as f:
-            names, labels = pickle.load(f)
-        f = h5py.File('data.hdf5', 'r')
-        dset = f['dset']
+
+    with open('pkl', 'rb') as f:
+        names, labels = pickle.load(f)
+    f = h5py.File('data.hdf5', 'r')
+    dset = f['dset']
     return names, labels, dset
 
 
@@ -224,14 +226,15 @@ def get_depth_maps(mode):
         for i, (data, mask) in enumerate(zip(dset_in, predict(dset_in))):
             dset[i] = data[..., 0] * (mask > 0.5) * 2 + (mask <= 0.5)
 
+        f.close()
         with open('pkl', 'wb') as f:
             pickle.dump((names, labels), f)
         open('done', 'w').close()
-    else:
-        with open('pkl', 'rb') as f:
-            names, labels = pickle.load(f)
-        f = h5py.File('data.hdf5', 'r')
-        dset = f['dset']
+
+    with open('pkl', 'rb') as f:
+        names, labels = pickle.load(f)
+    f = h5py.File('data.hdf5', 'r')
+    dset = f['dset']
     return names, labels, dset
 
 
@@ -303,10 +306,11 @@ def get_normalized_synthetic_zone_data(mode):
 
                 dset_out[i, angle] = normal
 
+        f.close()
         open('done', 'w').close()
-    else:
-        f = h5py.File('data.hdf5', 'r')
-        dset_out = f['dset']
+
+    f = h5py.File('data.hdf5', 'r')
+    dset_out = f['dset']
     return dset_out
 
 
