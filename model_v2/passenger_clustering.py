@@ -246,7 +246,7 @@ def register_images(im1, im2, params=None):
     if isinstance(im1, list):
         if not isinstance(im2, list):
             im2 = [im2 for _ in range(len(im1))]
-        for _ in range(100):
+        for _ in range(10):
             try:
                 with multiprocessing.Pool(multiprocessing.cpu_count()) as p:
                     return p.map(_register_images, [(i1, i2, params) for i1, i2 in zip(im1, im2)])
@@ -329,6 +329,7 @@ def get_augmented_segmentation_data_split(mode, n_split, split_id):
                 return np.transpose(data[2])[::4, ::-1]
 
         gen = zip(aps_gen[i1:i2], a3daps_gen[i1:i2])
+        max_l2 = [88, 66]
         for i, (aps_data, a3daps_data) in tqdm.tqdm(enumerate(gen), total=i2-i1):
             di = 0
             for data, mode in [(aps_data, 'aps'), (a3daps_data, 'a3daps')]:
@@ -355,9 +356,16 @@ def get_augmented_segmentation_data_split(mode, n_split, split_id):
                     reg = register_images(im1, im2)
                     cand.append((sum(x[1] for x in reg), (np.stack([x[0] for x in reg]))))
                 cand.sort(key=lambda x: x[0])
-                cand = np.stack([x[1] for x in cand[:n_neighbor]])
-                dset[i, ..., di+2] = np.mean(cand, axis=0)
-                dset[i, ..., di+3] = np.std(cand, axis=0)
+
+                n_include = n_neighbor
+                while True:
+                    cand = np.stack([x[1] for x in cand[:n_include]])
+                    dset[i, ..., di+2] = np.mean(cand, axis=0)
+                    dset[i, ..., di+3] = np.std(cand, axis=0)
+
+                    if np.linalg.norm(dset[i, ..., di] - dset[i, ..., di+2]) < max_l2[di//4]:
+                        break
+                    n_include -= 1
 
                 di += 4
 
