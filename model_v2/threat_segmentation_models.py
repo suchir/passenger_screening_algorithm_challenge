@@ -21,7 +21,7 @@ import skimage.transform
 
 
 @cached(passenger_clustering.get_augmented_segmentation_data, dataio.get_augmented_threat_heatmaps,
-        version=1)
+        version=1, cloud_cache=True)
 def train_multitask_cnn(mode, cvid, duration, weights, sanity_check=False, normalize_data=True,
                         scale_data=1, num_filters=64, downsize=1):
     angles, height, width, res, filters = 16, 660//downsize, 512//downsize, 512//downsize, 14
