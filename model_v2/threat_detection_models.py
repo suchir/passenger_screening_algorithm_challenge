@@ -19,15 +19,15 @@ import h5py
 
 
 
-@cached(threat_segmentation_models.get_augmented_hourglass_predictions,
-        body_zone_segmentation.get_body_zones, version=6)
-def train_simple_segmentation_model(mode, duration, learning_rate=1e-3, num_filters=0,
+@cached(threat_segmentation_models.get_all_multitask_cnn_predictions,
+        body_zone_segmentation.get_body_zones, version=7)
+def train_simple_segmentation_model(mode, cvid, duration, learning_rate=1e-3, num_filters=0,
                                     num_layers=0, blur_size=0, per_zone=None, use_hourglass=False,
                                     use_rotation=False, log_scale=False):
     tf.reset_default_graph()
 
     zones_in = tf.placeholder(tf.float32, [16, 330, 256, 18])
-    hmaps_in = tf.placeholder(tf.float32, [16, 330, 256, 2])
+    hmaps_in = tf.placeholder(tf.float32, [16, 330, 256, 6])
     labels_in = tf.placeholder(tf.float32, [17])
     confidence = tf.get_variable('confidence', [], initializer=tf.constant_initializer(1))
 
@@ -53,8 +53,8 @@ def train_simple_segmentation_model(mode, duration, learning_rate=1e-3, num_filt
     if log_scale:
         hmaps = tf.log(hmaps_in)
     else:
-        scales = [1, 100]
-        hmaps = tf.stack([hmaps_in[..., i] * scales[i] for i in range(2)], axis=-1)
+        scales = [1, 100] * 3
+        hmaps = tf.stack([hmaps_in[..., i] * scales[i] for i in range(6)], axis=-1)
     if use_hourglass:
         res = 256
         size = tf.random_uniform([2], minval=int(0.75*res), maxval=res, dtype=tf.int32)
@@ -172,28 +172,25 @@ def train_simple_segmentation_model(mode, duration, learning_rate=1e-3, num_filt
     if os.path.exists('done'):
         return predict
 
-    valid_mode = mode.replace('train', 'valid')
-    cvid = int(mode[-1])
-    _, _, zones_all = body_zone_segmentation.get_body_zones('all')
-    hmaps_train = threat_segmentation_models.get_augmented_hourglass_predictions(mode)
-    hmaps_valid = threat_segmentation_models.get_augmented_hourglass_predictions(valid_mode)
+    _, _, zones_all = body_zone_segmentation.get_body_zones(mode)
+    hmaps_all = threat_segmentation_models.get_all_multitask_cnn_predictions(mode)
     labels_all = [y for x, y in sorted(get_train_labels().items())]
-    train_idx, valid_idx = get_train_idx('all', cvid), get_valid_idx('all', cvid)
+    train_idx, valid_idx = get_train_idx(mode, cvid), get_valid_idx(mode, cvid)
 
     with read_log_dir():
         writer = tf.summary.FileWriter(os.getcwd())
 
-    def data_gen(zones_all, hmaps, labels_all, idx):
-        for i, hmap in zip(tqdm.tqdm(idx), hmaps):
+    def data_gen(zones_all, hmaps_all, labels_all, idx):
+        for i in tqdm.tqdm(idx):
             yield {
                 zones_in: zones_all[i],
-                hmaps_in: hmap,
+                hmaps_in: hmaps_all[i],
                 labels_in: np.array(labels_all[i])
             }
 
     def eval_model(sess):
         losses = []
-        for data in data_gen(zones_all, hmaps_valid, labels_all, valid_idx):
+        for data in data_gen(zones_all, hmaps_all, labels_all, valid_idx):
             cur_loss = sess.run(loss, feed_dict=data)
             losses.append(cur_loss)
         return np.mean(losses)
@@ -203,7 +200,7 @@ def train_simple_segmentation_model(mode, duration, learning_rate=1e-3, num_filt
         t0 = time.time()
         best_valid_loss = None
         while time.time() - t0 < duration * 3600:
-            for data in data_gen(zones_all, hmaps_train, labels_all, train_idx):
+            for data in data_gen(zones_all, hmaps_all, labels_all, train_idx):
                 _, cur_summary = sess.run([train_step, train_summary], feed_dict=data)
                 writer.add_summary(cur_summary, it)
                 it += 1

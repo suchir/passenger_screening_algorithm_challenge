@@ -166,6 +166,25 @@ def get_multitask_cnn_predictions(mode, n_split, lid):
     return dset
 
 
+@cached(get_multitask_cnn_predictions, subdir='ssd', version=0)
+def get_all_multitask_cnn_predictions(mode):
+    if not os.path.exists('done'):
+        f = h5py.File('data.hdf5', 'w')
+        dsets = [get_multitask_cnn_predictions(mode, 10, i) for i in range(6)]
+        dset = f.create_dataset('dset', (len(dsets[0]), 16, 330, 256, 6))
+
+        for dset_idx in tqdm.trange(6):
+            for i in tqdm.trange(len(dset)):
+                dset[i, ..., dset_idx] = dsets[dset_idx][i]
+
+        f.close()
+        open('done', 'w').close()
+
+    f = h5py.File('data.hdf5', 'r')
+    dset = f['dset']
+    return dset
+
+
 @cached(passenger_clustering.join_augmented_aps_segmentation_data, cloud_cache=True, version=4)
 def train_augmented_hourglass_cnn(mode, duration, learning_rate=1e-3, random_scale=False,
                                   drop_loss=0, downsample=True, num_filters=64,
