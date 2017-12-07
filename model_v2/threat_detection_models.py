@@ -23,7 +23,7 @@ import h5py
         body_zone_segmentation.get_body_zones, version=6)
 def train_simple_segmentation_model(mode, duration, learning_rate=1e-3, num_filters=0,
                                     num_layers=0, blur_size=0, per_zone=None, use_hourglass=False,
-                                    use_rotation=False):
+                                    use_rotation=False, log_scale=False):
     tf.reset_default_graph()
 
     zones_in = tf.placeholder(tf.float32, [16, 330, 256, 18])
@@ -50,8 +50,11 @@ def train_simple_segmentation_model(mode, duration, learning_rate=1e-3, num_filt
     zones = tf.exp(tf.log(zones + 1e-6) * tf.square(confidence))
     zones = zones / tf.reduce_sum(zones, axis=-1, keep_dims=True)
 
-    scales = [1, 100]
-    hmaps = tf.stack([hmaps_in[..., i] * scales[i] for i in range(2)], axis=-1)
+    if log_scale:
+        hmaps = tf.log(hmaps_in)
+    else:
+        scales = [1, 100]
+        hmaps = tf.stack([hmaps_in[..., i] * scales[i] for i in range(2)], axis=-1)
     if use_hourglass:
         res = 256
         size = tf.random_uniform([2], minval=int(0.75*res), maxval=res, dtype=tf.int32)
