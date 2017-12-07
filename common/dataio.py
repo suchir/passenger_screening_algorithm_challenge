@@ -225,18 +225,14 @@ def get_data(mode, dtype):
 
     class DataGenerator(object):
         def __init__(self, files, start=0, stop=None):
-            self.index = start
-            self.stop = len(files) if stop is None else stop
+            self.index = 0
             self.files = files[start:stop]
-
-        def __len__(self):
-            return self.len
 
         def __iter__(self):
             return self
 
         def __next__(self):
-            if self.index == self.stop:
+            if self.index == len(self):
                 raise StopIteration
             file = self.files[self.index].replace('\\', '/')
             name = file.split('/')[-1].split('.')[0]
@@ -251,7 +247,7 @@ def get_data(mode, dtype):
                 return next(DataGenerator(self.files, key))
 
         def __len__(self):
-            return self.stop - self.index
+            return len(self.files)
 
     return DataGenerator(files)
 
