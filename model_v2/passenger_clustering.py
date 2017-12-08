@@ -392,8 +392,8 @@ def get_augmented_segmentation_data(mode, n_split):
         for dset_in in dsets:
             for data in tqdm.tqdm(dset_in):
                 dset[i] = data
-                moments[j, 0] += np.mean(data, axis=(0, 1, 2)) / len(dset)
-                moments[j, 1] += np.mean(data**2, axis=(0, 1, 2)) / len(dset)
+                moments[:, 0] += np.mean(data, axis=(0, 1, 2)) / len(dset)
+                moments[:, 1] += np.mean(data**2, axis=(0, 1, 2)) / len(dset)
                 i += 1
 
         moments[:, 1] = np.sqrt(moments[:, 1] - moments[:, 0]**2)
