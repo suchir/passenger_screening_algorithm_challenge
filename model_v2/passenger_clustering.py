@@ -359,9 +359,9 @@ def get_augmented_segmentation_data_split(mode, n_split, split_id):
 
                 n_include = n_neighbor
                 while True:
-                    cand = np.stack([x[1] for x in cand[:n_include]])
-                    dset[i, ..., di+2] = np.mean(cand, axis=0)
-                    dset[i, ..., di+3] = np.std(cand, axis=0)
+                    nn = np.stack([x[1] for x in cand[:n_include]])
+                    dset[i, ..., di+2] = np.mean(nn, axis=0)
+                    dset[i, ..., di+3] = np.std(nn, axis=0)
 
                     if np.linalg.norm(dset[i, ..., di] - dset[i, ..., di+2]) < max_l2[di//4]:
                         break
