@@ -87,26 +87,30 @@ def train_simple_segmentation_model(mode, cvid, duration, learning_rate=1e-3, nu
         weights = tf.get_variable('weights', [17], initializer=tf.constant_initializer(0))
         logits = prod*weights + bias
     else:
-        def circular_conv(x, num_layers, num_filters):
+        def circular_conv(x, num_layers, num_filters, reduce_dim=True, reduce_max=True):
             for _ in range(num_layers):
                 x = tf.concat([x[:, 15:16, :], x, x[:, 0:1, :]], axis=1)
                 x = tf.layers.conv1d(x, num_filters, 3, activation=tf.nn.relu)
-            x = tf.layers.conv1d(x, 1, 1)
+            if reduce_dim:
+                x = tf.layers.conv1d(x, 1, 1)
+                if reduce_max:
+                    x = tf.reduce_max(x, axis=(1, 2))
             return x
 
-        logits = circular_conv(prod, num_layers, num_filters)
 
         if per_zone == 'bias':
-            logits = tf.reduce_max(logits, axis=(1, 2))
+            logits = circular_conv(prod, num_layers, num_filters)
             logits *= tf.get_variable('zone_weights', [17], initializer=tf.constant_initializer(1))
             logits += tf.get_variable('zone_bias', [17], initializer=tf.constant_initializer(0))
         elif per_zone == 'matmul':
+            logits = circular_conv(prod, num_layers, num_filters, reduce_max=False)
             logits = tf.reduce_max(logits, axis=1)
             logits = tf.matmul(tf.get_variable('zone_mat', [17, 17], initializer=tf.constant_initializer(np.eye(17))),
                                logits)
             logits += tf.get_variable('zone_bias', [17], initializer=tf.constant_initializer(0))
             logits = tf.squeeze(logits)
         elif per_zone == 'graph':
+            logits = circular_conv(prod, num_layers, num_filters, reduce_max=False)
             def graph_refinement(a1, a2, num_layers, num_filters):
                 x = tf.expand_dims(tf.concat([a1, a2], axis=-1), 0)
                 with tf.variable_scope('graph'):
@@ -144,8 +148,21 @@ def train_simple_segmentation_model(mode, cvid, duration, learning_rate=1e-3, nu
                     logits_list.append(tf.reduce_min(tf.stack(cur_logits)))
 
             logits = tf.stack(logits_list)
+        elif per_zone == 'dense':
+            logits = circular_conv(prod, num_layers, num_filters, reduce_dim=False)
+            logits = tf.reduce_max(logits, axis=1)
+
+            zones = [1, 2, 1, 2, 5, 6, 6, 8, 9, 8, 11, 11, 13, 13, 15, 15, 17]
+            with tf.variable_scope('zones', reuse=tf.AUTO_REUSE):
+                weights = tf.stack([
+                    tf.get_variable('weights_%s' % zone, [num_filters]) for zone in zones
+                ], axis=0)
+                bias = tf.stack([
+                    tf.get_variable('bias_%s' % zone, []) for zone in zones
+                ], axis=0)
+            logits = tf.squeeze(tf.reduce_sum(logits*weights, axis=1) + bias)
         else:
-            logits = tf.reduce_max(logits, axis=(1, 2))
+            logits = circular_conv(prod, num_layers, num_filters)
 
     loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=labels_in, logits=logits))
     preds = tf.sigmoid(logits)
