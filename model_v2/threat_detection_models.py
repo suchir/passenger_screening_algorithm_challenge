@@ -174,15 +174,15 @@ def train_simple_segmentation_model(mode, cvid, duration, learning_rate=1e-3, nu
     saver = tf.train.Saver()
     model_path = os.getcwd() + '/model.ckpt'
 
-    def predict(zones_all, hmaps, idx, n_sample=1):
+    def predict(zones_all, hmaps_all, idx, n_sample=1):
         with tf.Session() as sess:
             saver.restore(sess, model_path)
-            for i, hmap in zip(tqdm.tqdm(idx), hmaps):
+            for i in tqdm.tqdm(idx):
                 ret = np.zeros(17)
                 for _ in range(n_sample):
                     ret += sess.run(preds, feed_dict={
                         zones_in: zones_all[i],
-                        hmaps_in: hmap
+                        hmaps_in: hmaps_all[i]
                     })
                 yield ret / n_sample
 
@@ -245,12 +245,12 @@ def get_simple_segmentation_model_predictions(mode, *args, **kwargs):
     if not os.path.exists('preds.npy'):
         cvid = int(mode[-1])
         names, _, zones_all = body_zone_segmentation.get_body_zones('all')
-        hmaps = threat_segmentation_models.get_augmented_hourglass_predictions(mode)
+        hmaps_all = threat_segmentation_models.get_all_multitask_cnn_predictions('all')
         idx = get_train_idx('all', cvid) if mode.startswith('train') else get_valid_idx('all', cvid)
         predict = train_simple_segmentation_model(*args, **kwargs)
 
         preds = np.zeros((len(idx), 17))
-        for i, pred in enumerate(predict(zones_all, hmaps, idx, n_sample=16)):
+        for i, pred in enumerate(predict(zones_all, hmaps_all, idx, n_sample=16)):
             preds[i] = pred
 
         np.save('preds.npy', preds)
@@ -263,14 +263,14 @@ def get_simple_segmentation_model_predictions(mode, *args, **kwargs):
 def write_simple_segmentation_model_errors(mode, *args, **kwargs):
     cvid = int(mode[-1])
     names, _, zones_all = body_zone_segmentation.get_body_zones('all')
-    hmaps = threat_segmentation_models.get_augmented_hourglass_predictions(mode)
+    hmaps_all = threat_segmentation_models.get_all_multitask_cnn_predictions('all')
     idx = get_train_idx('all', cvid) if mode.startswith('train') else get_valid_idx('all', cvid)
     predict = train_simple_segmentation_model(*args, **kwargs)
     labels = get_train_labels()
 
     errors = []
     total_loss = 0
-    for i, pred in zip(idx, predict(zones_all, hmaps, idx)):
+    for i, pred in zip(idx, predict(zones_all, hmaps_all, idx)):
         name = names[i]
         label = np.array(labels[name])
         loss = log_loss(pred, label)
