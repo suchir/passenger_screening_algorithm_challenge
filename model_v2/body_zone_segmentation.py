@@ -472,9 +472,9 @@ def get_body_zones(mode):
             pred[np.sum(pred, axis=-1) == 0, 0] = 1e-6
             dset[i] = pred
 
+        f.close()
         with open('pkl', 'wb') as f:
             pickle.dump((names, labels), f)
-        f.close()
         open('done', 'w').close()
 
     with open('pkl', 'rb') as f:

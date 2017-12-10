@@ -313,8 +313,8 @@ def get_aps_data_hdf5(mode):
     return names, labels, x
 
 
-def write_answer_csv(ans_dict):
-    with open('ans.csv', 'w') as f:
+def write_answer_csv(ans_dict, filename='ans.csv'):
+    with open(filename, 'w') as f:
         f.write('Id,Probability\n')
         for label, ret in ans_dict.items():
             for i in range(17):

@@ -508,6 +508,98 @@ def train_resnet50_fcn(mode, epochs, learning_rate=1e-3, num_layers=3, data_idx=
         f.write(''.join(str(x) for x in hist.history['val_loss']))
 
 
+@cached(passenger_clustering.get_augmented_segmentation_data,
+        dataio.get_augmented_threat_heatmaps, version=1)
+def train_multitask_fcn(mode, cvid, lid, duration, learning_rate=1e-5, num_layers=5, downsize=2):
+    height, width = 660//downsize, 512//downsize
+
+
+    def get_hmap(input_tensor, name):
+        layer_idxs = [4, 37, 79, 141, 173]
+
+        base_model = keras.applications.ResNet50(include_top=False, weights='imagenet',
+                                                 input_tensor=input_tensor,
+                                                 input_shape=(height, width, 3))
+        for layer in base_model.layers:
+            layer.name = '%s_%s' % (name, layer.name)
+
+        def resize_bilinear(images):
+            return tf.image.resize_bilinear(images, [height, width])
+
+        hmaps = []
+        for i in layer_idxs[-num_layers:]:
+            output = base_model.layers[i].output
+            hmap = keras.layers.Convolution2D(1, (1, 1))(output)
+            hmap = keras.layers.Lambda(resize_bilinear)(hmap)
+            hmaps.append(hmap)
+
+        merged = keras.layers.Add()(hmaps)
+        return merged
+
+
+    aps_input = keras.layers.Input(shape=(height, width, 3))
+    a3daps_input = keras.layers.Input(shape=(height, width, 3))
+
+    logits = keras.layers.Add()([get_hmap(aps_input, 'aps'), get_hmap(a3daps_input, 'a3daps')])
+    preds = keras.layers.Activation('sigmoid')(logits)
+
+    model = keras.models.Model(inputs=[aps_input, a3daps_input], outputs=preds)
+    model.compile(optimizer=keras.optimizers.Adam(learning_rate), loss='binary_crossentropy')
+
+
+    def random_resize(images, amount=0.25):
+        _, w, h, _ = images.shape
+        pw, ph = np.random.randint(1, int(w*amount/2)), np.random.randint(1, int(h*amount/2))
+        images = np.stack([skimage.transform.resize(image, [w-2*pw, h-2*ph])
+                           for image in images / 10], axis=0) * 10
+        images = np.pad(images, [(0, 0), (pw, pw), (ph, ph), (0, 0)], 'constant')
+
+        return images, (pw, ph)
+
+
+    model_path = os.getcwd() + '/model.h5'
+
+    dset_all, _ = passenger_clustering.get_augmented_segmentation_data(mode, 10)
+    labels_all, _ = dataio.get_augmented_threat_heatmaps(mode)
+    train_idx, valid_idx = get_train_idx(mode, cvid), get_valid_idx(mode, cvid)
+
+
+    def data_generator(idx):
+        while True:
+            for i in idx:
+                data = dset_all[i, :, ::downsize, ::downsize]
+                label = labels_all[i, :, ::downsize, ::downsize, lid:lid+1]
+                aps_image = np.stack([data[..., 0] - data[..., 2]] * 3, axis=-1)
+                a3daps_image = np.stack([data[..., 4] - data[..., 6]] * 3, axis=-1)
+
+                ret, _ = random_resize(np.concatenate([aps_image, a3daps_image], axis=-1))
+                ret = ret*256 + 128
+                aps_image, a3daps_image = ret[..., :3], ret[..., 3:]
+
+                aps_image = keras.applications.imagenet_utils.preprocess_input(aps_image)
+                a3daps_image = keras.applications.imagenet_utils.preprocess_input(a3daps_image)
+
+                yield [aps_image, a3daps_image], label
+
+
+    t0 = time.time()
+    while True:
+        if time.time() - t0 > duration * 3600:
+            break
+
+        hist = model.fit_generator(data_generator(train_idx), 
+                                   steps_per_epoch=len(train_idx),
+                                   epochs=1,
+                                   validation_data=data_generator(valid_idx),
+                                   validation_steps=len(valid_idx))
+        model.save('model.h5')
+
+        for key in hist.history:
+            with open('%s.txt' % key, 'a') as f:
+                f.write(str(hist.history[key][-1]) + '\n')
+
+
+
 @cached(passenger_clustering.get_clustered_data_and_threat_heatmaps, version=0)
 def train_hourglass_cnn(mode, duration, cluster_type='groundtruth', learning_rate=1e-3,
                         predict_one=False, lr_decay_tolerance=999, include_reflection=False,

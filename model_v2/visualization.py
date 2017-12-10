@@ -77,7 +77,7 @@ def write_body_zone_errors(mode, *args, **kwargs):
         body_zone_segmentation.train_zone_segmentation_cnn,
         body_zone_segmentation.get_depth_maps, version=3)
 def write_body_zone_predictions(mode, n_sample, *args, **kwargs):
-    dset_fake = body_zone_segmentation.get_normalized_synthetic_zone_data(mode)
+    dset_fake = body_zone_segmentation.get_normalized_synthetic_zone_data('all')
     _, _, dset_real = body_zone_segmentation.get_depth_maps(mode)
     predict = body_zone_segmentation.train_zone_segmentation_cnn(*args, **kwargs)
     def data_gen():
@@ -303,22 +303,25 @@ def write_augmented_hourglass_predicted_heatmaps(mode, model, *args, **kwargs):
 
 
 @cached(threat_segmentation_models.get_multitask_cnn_predictions, subdir='ssd', version=0)
-def write_multitask_cnn_predictions(mode, n_split, lid, normalize=False):
+def write_multitask_cnn_predictions(mode, n_split, lid, normalize=False, show_label=True):
     preds = threat_segmentation_models.get_multitask_cnn_predictions(mode, n_split, lid)
     names, _, dset = dataio.get_aps_data_hdf5(mode)
-    labels = dataio.get_threat_heatmaps(mode)
+    labels = dataio.get_threat_heatmaps(mode) if show_label else range(len(names))
 
     for name, data, label, pred in zip(tqdm.tqdm(names), dset, labels, preds):
         if normalize:
-            label /= label.max()
+            if show_label:
+                label /= label.max()
             pred /= pred.max()
         data = data[::2, ::2]
-        label = label[::2, ::2]
+        if show_label:
+            label = label[::2, ::2]
         for i in range(16):
             image = data[..., i]
             image = np.concatenate([image] * 3, axis=-1) / np.max(image)
             image = np.stack([np.zeros(image.shape), image, np.zeros(image.shape)], axis=-1)
-            image[:, 256:512, 0] = np.sum(label[..., i, :], axis=-1)
+            if show_label:
+                image[:, 256:512, 0] = np.sum(label[..., i, :], axis=-1)
             image[:, 512:, 0] = pred[i]
             imageio.imsave('%s_%s.png' % (name, i), image)
 
