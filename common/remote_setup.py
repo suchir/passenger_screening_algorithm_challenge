@@ -11,11 +11,15 @@ def download_bucket(path, bucket):
 
 if __name__ == '__main__':
     inputs = set(sys.argv[1:])
-    assert inputs <= {'aps', 'a3daps', 'a3d', 'hand_labeling', 'pyelastix'}, "unrecognized input"
+    valid_args = {'aps', 'a3daps', 'a3d', 'hand_labeling', 'pyelastix',
+                  'stage2-aps', 'stage2-a3daps', 'stage2-a3d'}
+    assert inputs <= valid_args, "unrecognized input"
 
     for dtype in ('aps', 'a3daps', 'a3d'):
         if dtype in inputs:
             download_bucket('input/competition_data', 'kaggle-tsa-stage1/stage1/%s' % dtype)
+        if 'stage2-%s' % dtype in inputs:
+            download_bucket('input/competition_data/stage2', 'kaggle-tsa-stage2/stage2/%s' % dtype)
     if 'hand_labeling' in inputs:
         download_bucket('input', 'psac_hand_labeling/hand_labeling')
     if inputs:

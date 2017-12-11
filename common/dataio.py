@@ -188,16 +188,22 @@ def get_cv_splits(n_split):
 def get_data(mode, dtype):
     assert mode in ('sample', 'sample_large', 'all', 'sample_train', 'train', 'sample_valid',
                     'valid', 'sample_test', 'test', 'train-0', 'train-1', 'train-2', 'train-3',
-                    'train-4', 'valid-0', 'valid-1', 'valid-2', 'valid-3', 'valid-4', 'public_test')
+                    'train-4', 'valid-0', 'valid-1', 'valid-2', 'valid-3', 'valid-4', 'public_test',
+                    'private_test')
     assert dtype in ('aps', 'a3daps', 'a3d')
-    with read_input_dir('competition_data/%s' % dtype):
+
+    if mode == 'private_test':
+        path = 'competition_data/stage2/%s' % dtype
+    else:
+        path = 'competition_data/%s' % dtype
+    with read_input_dir(path):
         files = sorted(glob.glob('*'))
 
     labels = get_train_labels()
     has_label = lambda file: file.split('.')[0] in labels
     if mode == 'public_test':
         files = [file for file in files if not has_label(file)]
-    else:
+    elif mode != 'private_test':
         files = [file for file in files if has_label(file)]
         if mode.endswith('train'):
             files = files[100:]
@@ -214,7 +220,7 @@ def get_data(mode, dtype):
         else:
             files = files[:10]
 
-    with read_input_dir('competition_data/%s' % dtype):
+    with read_input_dir(path):
         files = [os.path.abspath(file) for file in files]
 
     def generator():
@@ -294,7 +300,7 @@ def get_aps_data_hdf5(mode):
         f = h5py.File('data.hdf5', 'w')
         gen = get_data(mode, 'aps')
         x = f.create_dataset('x', (len(gen), 660, 512, 16))
-        for i, (name, label, data) in enumerate(gen):
+        for i, (name, label, data) in enumerate(tqdm.tqdm(gen)):
             names.append(name)
             labels.append(label)
             x[i] = np.rot90(data)
