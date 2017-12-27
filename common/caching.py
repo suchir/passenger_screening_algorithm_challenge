@@ -9,6 +9,7 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 ROOT_DIR = os.getcwd()
 REMOTE_ROOT_DIR = '/home/Suchir/passenger_screening_algorithm_challenge'
 CACHE_BUCKET = 'gs://psac_cache'
+CLOUD_CACHE_ENABLED = False
 
 _fn_stack = []
 _cached_fns = set()
@@ -91,7 +92,7 @@ class CachedFunction(object):
 
 
         with change_directory():
-            if self.cloud_cache:
+            if CLOUD_CACHE_ENABLED and self.cloud_cache:
                 on_cloud = self._cached_on_cloud(path)
                 if on_cloud and not os.path.exists(path):
                     os.makedirs(path)
@@ -100,7 +101,7 @@ class CachedFunction(object):
             with change_directory(path):
                 ret = self._fn(*args, **kwargs)
 
-            if self.cloud_cache and not on_cloud:
+            if CLOUD_CACHE_ENABLED and self.cloud_cache and not on_cloud:
                 self._upload_cache(path)
 
         _fn_stack.pop()
