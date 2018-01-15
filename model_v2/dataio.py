@@ -1,7 +1,6 @@
 from common.caching import read_input_dir, cached
 from common.dataio import get_aps_data_hdf5, get_passenger_clusters
 
-import matplotlib.pyplot as plt
 import numpy as np
 import skimage.transform
 import glob

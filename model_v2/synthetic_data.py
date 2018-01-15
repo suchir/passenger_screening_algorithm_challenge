@@ -4,7 +4,6 @@ from common.dataio import get_aps_data_hdf5, get_passenger_clusters, get_data
 from . import dataio
 
 from collections import defaultdict
-import matplotlib.pyplot as plt
 import numpy as np
 import skimage.transform
 import skimage.io

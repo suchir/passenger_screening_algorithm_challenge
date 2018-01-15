@@ -6,7 +6,6 @@ from . import tf_models
 from . import dataio
 from . import passenger_clustering
 
-import matplotlib.pyplot as plt
 import tensorflow as tf
 import numpy as np
 import os

@@ -7,7 +7,6 @@ from . import tf_models
 from . import body_zone_segmentation
 from . import threat_segmentation_models
 
-import matplotlib.pyplot as plt
 import tensorflow as tf
 import numpy as np
 import os

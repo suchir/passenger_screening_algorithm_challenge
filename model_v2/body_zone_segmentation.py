@@ -6,7 +6,6 @@ from . import tf_models
 from . import synthetic_data
 
 import tensorflow as tf
-import matplotlib.pyplot as plt
 import numpy as np
 import skimage.transform
 import glob
