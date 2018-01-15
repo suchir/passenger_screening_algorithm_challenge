@@ -4,6 +4,7 @@ import math
 import random
 import json
 
+bpy.ops.wm.addon_enable(module='import_runtime_mhx2')
 
 scene = bpy.data.scenes['Scene']
 camera = bpy.data.objects['Camera']

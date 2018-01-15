@@ -152,10 +152,6 @@ def train_mask_segmentation_cnn(duration, learning_rate=1e-3, model='logistic', 
     saver = tf.train.Saver()
     model_path = os.getcwd() + '/model.ckpt'
 
-    _, _, dset_all = get_mask_training_data()
-    dset_train = dset_all[:80]
-    dset_valid = dset_all[80:]
-
     def predict(dset, num_sample=16):
         with tf.Session() as sess:
             saver.restore(sess, model_path)
@@ -168,6 +164,10 @@ def train_mask_segmentation_cnn(duration, learning_rate=1e-3, model='logistic', 
 
     if os.path.exists('done'):
         return predict
+
+    _, _, dset_all = get_mask_training_data()
+    dset_train = dset_all[:80]
+    dset_valid = dset_all[80:]
 
     with read_log_dir():
         writer = tf.summary.FileWriter(os.getcwd())
@@ -421,7 +421,7 @@ def spatial_pool_zones(gen):
     max_procs = multiprocessing.cpu_count()
     batch = []
     with read_input_dir('scripts'):
-        exe = os.getcwd() + '/spatial_pooling.exe'
+        exe = os.getcwd() + '/spatial_pooling'
     subprocess.call('rm *.in', shell=True)
     subprocess.call('rm *.out', shell=True)
 
@@ -456,7 +456,7 @@ def spatial_pool_zones(gen):
     yield from flush_batch()
 
 
-@cached(train_zone_segmentation_cnn, get_depth_maps, subdir='ssd', cloud_cache=False, version=5)
+@cached(train_zone_segmentation_cnn, get_depth_maps, subdir='ssd', cloud_cache=True, version=5)
 def get_body_zones(mode):
     if not os.path.exists('done'):
         names, labels, dset_in = get_depth_maps(mode)
